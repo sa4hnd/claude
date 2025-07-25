@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Bloom app (rename me)",
-    "slug": "bloom-app-rename-me",
+    "name": "Hello World",
+    "slug": "hello-world",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -36,6 +36,7 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "displayName": "Hello World"
   }
 }

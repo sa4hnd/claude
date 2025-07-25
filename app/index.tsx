@@ -1,11 +1,10 @@
-import { Text, View, StyleSheet, Image } from "react-native";
+import { Text, View, StyleSheet } from "react-native";
 
 export default function Index() {
   return (
     <View style={styles.container}>
-      <Image source={require("../assets/images/adaptive-icon.png")} style={styles.image} />
-      <Text style={styles.heading}>Your app starts here</Text>
-      <Text style={styles.text}>In just a moment, you’ll see your app begin to take shape.</Text>
+      <Text style={styles.heading}>Hello World!</Text>
+      <Text style={styles.subtext}>Welcome to your new app</Text>
     </View>
   );
 }
@@ -15,24 +14,18 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    gap: 8,
+    backgroundColor: "#f8f9fa",
     padding: 32,
   },
   heading: {
-    fontSize: 24,
+    fontSize: 32,
     fontWeight: "bold",
-    textAlign: "center",
-    color: "#181818", // equivalent to text-blue-400
+    color: "#2c3e50",
+    marginBottom: 8,
   },
-  text: {
+  subtext: {
     fontSize: 18,
-    fontWeight: "medium",
+    color: "#7f8c8d",
     textAlign: "center",
-    color: "#4D4D4D",
-  },
-  image: {
-    width: 80,
-    height: 80,
-    marginBottom: 16,
   },
 });

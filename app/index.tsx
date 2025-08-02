@@ -4,7 +4,6 @@ export default function Index() {
   return (
     <View style={styles.container}>
       <Text style={styles.heading}>Hello World!!!!!!</Text>
-      <Text style={styles.subtext}>Welcome to your new app</Text>
     </View>
   );
 }
@@ -22,10 +21,5 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: "#be185d",
     marginBottom: 8,
-  },
-  subtext: {
-    fontSize: 18,
-    color: "#ec4899",
-    textAlign: "center",
   },
 });

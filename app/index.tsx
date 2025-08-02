@@ -14,18 +14,18 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#f8f9fa",
+    backgroundColor: "#fdf2f8",
     padding: 32,
   },
   heading: {
     fontSize: 32,
     fontWeight: "bold",
-    color: "#2c3e50",
+    color: "#be185d",
     marginBottom: 8,
   },
   subtext: {
     fontSize: 18,
-    color: "#7f8c8d",
+    color: "#ec4899",
     textAlign: "center",
   },
 });

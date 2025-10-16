@@ -1,0 +1,701 @@
+diff --git a/node_modules/react-native/Libraries/LogBox/UI/LogBoxInspector.js b/node_modules/react-native/Libraries/LogBox/UI/LogBoxInspector.js
+index be889b0..2dff9ed 100644
+--- a/node_modules/react-native/Libraries/LogBox/UI/LogBoxInspector.js
++++ b/node_modules/react-native/Libraries/LogBox/UI/LogBoxInspector.js
+@@ -11,14 +11,15 @@
+ import Keyboard from '../../Components/Keyboard/Keyboard';
+ import View from '../../Components/View/View';
+ import StyleSheet from '../../StyleSheet/StyleSheet';
++import Text from '../../Text/Text';
++import TouchableOpacity from '../../Components/Touchable/TouchableOpacity';
++import Alert from '../../Alert/Alert';
+ import * as LogBoxData from '../Data/LogBoxData';
+ import LogBoxLog, {type LogLevel} from '../Data/LogBoxLog';
+-import LogBoxInspectorBody from './LogBoxInspectorBody';
+-import LogBoxInspectorFooter from './LogBoxInspectorFooter';
+-import LogBoxInspectorHeader from './LogBoxInspectorHeader';
+ import * as LogBoxStyle from './LogBoxStyle';
+ import * as React from 'react';
+-import {useEffect} from 'react';
++import {useEffect, useState} from 'react';
++import * as Clipboard from 'expo-clipboard';
+ 
+ type Props = $ReadOnly<{
+   onDismiss: () => void,
+@@ -31,6 +32,8 @@ type Props = $ReadOnly<{
+ 
+ export default function LogBoxInspector(props: Props): React.Node {
+   const {logs, selectedIndex} = props;
++  const [showDetails, setShowDetails] = useState(false);
++  const [copySuccess, setCopySuccess] = useState(false);
+   let log = logs[selectedIndex];
+ 
+   useEffect(() => {
+@@ -39,44 +42,126 @@ export default function LogBoxInspector(props: Props): React.Node {
+     }
+   }, [log]);
+ 
+-  useEffect(() => {
+-    // Optimistically symbolicate the last and next logs.
+-    if (logs.length > 1) {
+-      const selected = selectedIndex;
+-      const lastIndex = logs.length - 1;
+-      const prevIndex = selected - 1 < 0 ? lastIndex : selected - 1;
+-      const nextIndex = selected + 1 > lastIndex ? 0 : selected + 1;
+-      LogBoxData.symbolicateLogLazy(logs[prevIndex]);
+-      LogBoxData.symbolicateLogLazy(logs[nextIndex]);
+-    }
+-  }, [logs, selectedIndex]);
+-
+   useEffect(() => {
+     Keyboard.dismiss();
+   }, []);
+ 
+-  function _handleRetry() {
+-    LogBoxData.retrySymbolicateLogNow(log);
+-  }
++  const handleCopyError = async () => {
++    try {
++      let errorText = '';
++
++      if (log) {
++        // Essential error information
++        errorText += `🚨 Error: ${log.message?.content || 'Unknown error'}`;
++
++        // Code frame - most important for fixing
++        if (log.codeFrame) {
++          const cleanCodeFrame = log.codeFrame.content.replace(/\x1b\[[0-9;]*m/g, '');
++          errorText += `\n\n📍 Code:\n${cleanCodeFrame}`;
++        }
++
++        // Simplified stack trace - only first few relevant frames
++        if (log.stack && Array.isArray(log.stack)) {
++          const relevantFrames = log.stack.slice(0, 3).map(frame => {
++            const file = frame.file || 'unknown';
++            const method = frame.methodName || 'unknown';
++            const line = frame.lineNumber || 'unknown';
++            return `  at ${method} (${file}:${line})`;
++          }).join('\n');
++          
++          errorText += `\n\n🔍 Stack:\n${relevantFrames}`;
++        }
++
++        // Add AI prompt for quick help
++        errorText += `\n\n---\n🤖 AI Prompt: Fix this error please.`;
++      } else {
++        errorText = `🚨 ${log?.level?.toUpperCase() || 'UNKNOWN'} Error\nLog: ${selectedIndex + 1} of ${logs.length}\n\n---\n🤖 AI Prompt: Fix this error please.`;
++      }
++      
++      await Clipboard.setStringAsync(errorText);
++      setCopySuccess(true);
++      // Hide success message after 4 seconds
++      setTimeout(() => setCopySuccess(false), 4000);
++    } catch (error) {
++      setCopySuccess(false);
++    }
++  };
+ 
+   if (log == null) {
+     return null;
+   }
+ 
++  // Modern "Oops" error screen design
+   return (
+-    <View id="logbox_inspector" style={styles.root}>
+-      <LogBoxInspectorHeader
+-        onSelectIndex={props.onChangeSelectedIndex}
+-        selectedIndex={selectedIndex}
+-        total={logs.length}
+-        level={log.level}
+-      />
+-      <LogBoxInspectorBody log={log} onRetry={_handleRetry} />
+-      <LogBoxInspectorFooter
+-        onDismiss={props.onDismiss}
+-        onMinimize={props.onMinimize}
+-        level={log.level}
+-      />
++    <View id="logbox_inspector" style={styles.modernErrorContainer}>
++      <View style={styles.modernErrorContent}>
++        {/* Robot/Error Icon */}
++        <View style={styles.errorIconContainer}>
++          <Text style={styles.errorIcon}>🤖</Text>
++          <View style={styles.errorIconBroken}>
++            <Text style={styles.brokenParts}>⚙️</Text>
++            <Text style={styles.brokenParts}>🔧</Text>
++          </View>
++        </View>
++
++        {/* Main Error Message */}
++        <Text style={styles.oopsTitle}>Oops!</Text>
++        <Text style={styles.oopsSubtitle}>Even AI can sometimes make errors</Text>
++        
++        {/* Instruction Text */}
++        <Text style={styles.instructionText}>
++          Copy the error details below and paste them to your AI chat - it will fix it for you!
++        </Text>
++        
++        {/* Copy Button */}
++        <TouchableOpacity style={styles.copyButtonModern} onPress={handleCopyError}>
++          <Text style={styles.copyButtonTextModern}>
++            {copySuccess ? '✅ Copied!' : '📋 Copy Error Details'}
++          </Text>
++        </TouchableOpacity>
++
++        {/* Copy Success Message */}
++        {copySuccess && (
++          <View style={styles.successMessage}>
++            <Text style={styles.successText}>
++              ✨ Perfect! Now paste this in your AI chat and it will fix the error
++            </Text>
++          </View>
++        )}
++
++        {/* Optional Details Toggle */}
++        <TouchableOpacity 
++          style={styles.detailsToggle} 
++          onPress={() => setShowDetails(!showDetails)}
++        >
++          <Text style={styles.detailsToggleText}>
++            {showDetails ? 'Hide' : 'Show'} Technical Details
++          </Text>
++        </TouchableOpacity>
++
++        {/* Technical Details (Hidden by default) */}
++        {showDetails && (
++          <View style={styles.technicalDetails}>
++            <Text style={styles.technicalTitle}>Technical Details:</Text>
++            <Text style={styles.technicalText}>
++              Level: {log.level} | Log: {selectedIndex + 1} of {logs.length}
++            </Text>
++            <Text style={styles.technicalText}>
++              Message: {log.message?.content || 'No message available'}
++            </Text>
++            {log.codeFrame && (
++              <Text style={styles.technicalText}>
++                Code Frame: {log.codeFrame.content.replace(/\x1b\[[0-9;]*m/g, '')}
++              </Text>
++            )}
++          </View>
++        )}
++
++        {/* Dismiss Button */}
++        <TouchableOpacity style={styles.dismissButton} onPress={props.onDismiss}>
++          <Text style={styles.dismissButtonText}>✕ Dismiss</Text>
++        </TouchableOpacity>
++      </View>
+     </View>
+   );
+ }
+@@ -86,4 +171,163 @@ const styles = StyleSheet.create({
+     flex: 1,
+     backgroundColor: LogBoxStyle.getTextColor(),
+   },
++  // Modern "Oops" error screen styles
++  modernErrorContainer: {
++    backgroundColor: '#0a0a0a', // Darker background with subtle gradient effect
++    flex: 1,
++    justifyContent: 'center',
++    alignItems: 'center',
++    paddingHorizontal: 24,
++  },
++  modernErrorContent: {
++    alignItems: 'center',
++    maxWidth: 420,
++    width: '100%',
++    backgroundColor: '#111111',
++    borderRadius: 20,
++    paddingVertical: 40,
++    paddingHorizontal: 30,
++    borderWidth: 1,
++    borderColor: '#222222',
++    shadowColor: '#000',
++    shadowOffset: {
++      width: 0,
++      height: 8,
++    },
++    shadowOpacity: 0.5,
++    shadowRadius: 16,
++    elevation: 16,
++  },
++  errorIconContainer: {
++    position: 'relative',
++    marginBottom: 32,
++  },
++  errorIcon: {
++    fontSize: 72,
++    textAlign: 'center',
++    opacity: 0.9,
++  },
++  errorIconBroken: {
++    position: 'absolute',
++    top: -8,
++    right: -16,
++    flexDirection: 'row',
++  },
++  brokenParts: {
++    fontSize: 18,
++    marginHorizontal: 3,
++    opacity: 0.6,
++  },
++  oopsTitle: {
++    fontSize: 42,
++    fontWeight: '800',
++    color: '#ffffff',
++    marginBottom: 12,
++    textAlign: 'center',
++    letterSpacing: -0.5,
++  },
++  oopsSubtitle: {
++    fontSize: 16,
++    color: '#a0a0a0',
++    textAlign: 'center',
++    marginBottom: 24,
++    lineHeight: 22,
++    fontWeight: '400',
++  },
++  instructionText: {
++    fontSize: 15,
++    color: '#b0b0b0',
++    textAlign: 'center',
++    marginBottom: 28,
++    lineHeight: 20,
++    paddingHorizontal: 10,
++    fontWeight: '500',
++  },
++  copyButtonModern: {
++    backgroundColor: '#ffffff',
++    paddingHorizontal: 32,
++    paddingVertical: 16,
++    borderRadius: 14,
++    marginBottom: 24,
++    shadowColor: '#000',
++    shadowOffset: {
++      width: 0,
++      height: 6,
++    },
++    shadowOpacity: 0.4,
++    shadowRadius: 12,
++    elevation: 12,
++    borderWidth: 1,
++    borderColor: '#f0f0f0',
++  },
++  copyButtonTextModern: {
++    fontSize: 16,
++    fontWeight: '700',
++    color: '#000000',
++    textAlign: 'center',
++    letterSpacing: 0.2,
++  },
++  successMessage: {
++    backgroundColor: '#1a4d3a',
++    paddingHorizontal: 20,
++    paddingVertical: 12,
++    borderRadius: 10,
++    marginBottom: 20,
++    borderWidth: 1,
++    borderColor: '#2d7a4f',
++  },
++  successText: {
++    fontSize: 14,
++    color: '#4ade80',
++    textAlign: 'center',
++    fontWeight: '500',
++    lineHeight: 18,
++  },
++  detailsToggle: {
++    paddingVertical: 10,
++    paddingHorizontal: 20,
++    borderRadius: 8,
++    borderWidth: 1,
++    borderColor: '#333333',
++    marginBottom: 20,
++  },
++  detailsToggleText: {
++    fontSize: 14,
++    color: '#888888',
++    textAlign: 'center',
++  },
++  technicalDetails: {
++    backgroundColor: '#111111',
++    padding: 20,
++    borderRadius: 12,
++    width: '100%',
++    borderWidth: 1,
++    borderColor: '#333333',
++    marginBottom: 20,
++  },
++  technicalTitle: {
++    fontSize: 16,
++    fontWeight: '600',
++    color: '#ffffff',
++    marginBottom: 10,
++  },
++  technicalText: {
++    fontSize: 14,
++    color: '#cccccc',
++    lineHeight: 20,
++    marginBottom: 5,
++  },
++  dismissButton: {
++    paddingVertical: 12,
++    paddingHorizontal: 24,
++    borderRadius: 8,
++    borderWidth: 1,
++    borderColor: '#444444',
++    backgroundColor: 'rgba(255, 255, 255, 0.1)',
++  },
++  dismissButtonText: {
++    fontSize: 14,
++    color: '#888888',
++    textAlign: 'center',
++  },
+ });
+diff --git a/node_modules/react-native/Libraries/LogBox/UI/LogBoxInspectorHeader.js b/node_modules/react-native/Libraries/LogBox/UI/LogBoxInspectorHeader.js
+index c6aa793..aea733e 100644
+--- a/node_modules/react-native/Libraries/LogBox/UI/LogBoxInspectorHeader.js
++++ b/node_modules/react-native/Libraries/LogBox/UI/LogBoxInspectorHeader.js
+@@ -19,61 +19,110 @@ import Platform from '../../Utilities/Platform';
+ import LogBoxInspectorHeaderButton from './LogBoxInspectorHeaderButton';
+ import * as LogBoxStyle from './LogBoxStyle';
+ import * as React from 'react';
++import {TouchableOpacity, Alert} from 'react-native';
++import * as Clipboard from 'expo-clipboard';
+ 
+ type Props = $ReadOnly<{
+   onSelectIndex: (selectedIndex: number) => void,
+   selectedIndex: number,
+   total: number,
+   level: LogLevel,
++  currentLog?: ?LogBoxLog,
+ }>;
+ 
+ const LogBoxInspectorHeaderSafeArea: React.ComponentType<ViewProps> =
+   Platform.OS === 'android' ? View : SafeAreaView;
+ 
+ export default function LogBoxInspectorHeader(props: Props): React.Node {
+-  if (props.level === 'syntax') {
+-    return (
+-      <LogBoxInspectorHeaderSafeArea style={styles[props.level]}>
+-        <View style={styles.header}>
+-          <View style={styles.title}>
+-            <Text style={styles.titleText} id="logbox_header_title_text">
+-              Failed to compile
+-            </Text>
++  const [showDetails, setShowDetails] = React.useState(false);
++
++  const handleCopyError = async () => {
++    try {
++      let errorText = '';
++
++      if (props.currentLog) {
++        const log = props.currentLog;
++        
++        // Essential error information
++        errorText += `🚨 Error: ${log.message?.content || 'Unknown error'}`;
++
++        // Code frame - most important for fixing
++        if (log.codeFrame) {
++          const cleanCodeFrame = log.codeFrame.content.replace(/\x1b\[[0-9;]*m/g, '');
++          errorText += `\n\n📍 Code:\n${cleanCodeFrame}`;
++        }
++
++        // Simplified stack trace - only first few relevant frames
++        if (log.stack && Array.isArray(log.stack)) {
++          const relevantFrames = log.stack.slice(0, 3).map(frame => {
++            const file = frame.file || 'unknown';
++            const method = frame.methodName || 'unknown';
++            const line = frame.lineNumber || 'unknown';
++            return `  at ${method} (${file}:${line})`;
++          }).join('\n');
++          
++          errorText += `\n\n🔍 Stack:\n${relevantFrames}`;
++        }
++
++        // Add AI prompt for quick help
++        errorText += `\n\n---\n🤖 AI Prompt: Fix this error please.`;
++      } else {
++        errorText = `🚨 ${props.level.toUpperCase()} Error\nLog: ${props.selectedIndex + 1} of ${props.total}\n\n---\n🤖 AI Prompt: Fix this error please.`;
++      }
++      
++      await Clipboard.setStringAsync(errorText);
++      Alert.alert('📋 Copied!', 'Copy and paste this prompt to the chat - AI will fix it!');
++    } catch (error) {
++      Alert.alert('Error', 'Failed to copy error details');
++    }
++  };
++
++  // Modern "Oops" error screen design
++  return (
++    <LogBoxInspectorHeaderSafeArea style={styles.modernErrorContainer}>
++      <View style={styles.modernErrorContent}>
++        {/* Robot/Error Icon */}
++        <View style={styles.errorIconContainer}>
++          <Text style={styles.errorIcon}>🤖</Text>
++          <View style={styles.errorIconBroken}>
++            <Text style={styles.brokenParts}>⚙️</Text>
++            <Text style={styles.brokenParts}>🔧</Text>
+           </View>
+         </View>
+-      </LogBoxInspectorHeaderSafeArea>
+-    );
+-  }
+ 
+-  const prevIndex =
+-    props.selectedIndex - 1 < 0 ? props.total - 1 : props.selectedIndex - 1;
+-  const nextIndex =
+-    props.selectedIndex + 1 > props.total - 1 ? 0 : props.selectedIndex + 1;
++        {/* Main Error Message */}
++        <Text style={styles.oopsTitle}>Oops!</Text>
++        <Text style={styles.oopsSubtitle}>Even AI can sometimes make errors</Text>
+         
+-  const titleText = `Log ${props.selectedIndex + 1} of ${props.total}`;
++        {/* Copy Button */}
++        <TouchableOpacity style={styles.copyButtonModern} onPress={handleCopyError}>
++          <Text style={styles.copyButtonTextModern}>📋 Copy & Paste to AI</Text>
++        </TouchableOpacity>
+ 
+-  return (
+-    <LogBoxInspectorHeaderSafeArea style={styles[props.level]}>
+-      <View style={styles.header}>
+-        <LogBoxInspectorHeaderButton
+-          id="logbox_header_button_prev"
+-          disabled={props.total <= 1}
+-          level={props.level}
+-          image={require('./LogBoxImages/chevron-left.png')}
+-          onPress={() => props.onSelectIndex(prevIndex)}
+-        />
+-        <View style={styles.title}>
+-          <Text style={styles.titleText} id="logbox_header_title_text">
+-            {titleText}
++        {/* Optional Details Toggle */}
++        <TouchableOpacity 
++          style={styles.detailsToggle} 
++          onPress={() => setShowDetails(!showDetails)}
++        >
++          <Text style={styles.detailsToggleText}>
++            {showDetails ? 'Hide' : 'Show'} Technical Details
+           </Text>
+-        </View>
+-        <LogBoxInspectorHeaderButton
+-          id="logbox_header_button_next"
+-          disabled={props.total <= 1}
+-          level={props.level}
+-          image={require('./LogBoxImages/chevron-right.png')}
+-          onPress={() => props.onSelectIndex(nextIndex)}
+-        />
++        </TouchableOpacity>
++
++        {/* Technical Details (Hidden by default) */}
++        {showDetails && (
++          <View style={styles.technicalDetails}>
++            <Text style={styles.technicalTitle}>Technical Details:</Text>
++            <Text style={styles.technicalText}>
++              Level: {props.level} | Log: {props.selectedIndex + 1} of {props.total}
++            </Text>
++            {props.currentLog && (
++              <Text style={styles.technicalText}>
++                Message: {props.currentLog.message?.content || 'No message available'}
++              </Text>
++            )}
++          </View>
++        )}
+       </View>
+     </LogBoxInspectorHeaderSafeArea>
+   );
+@@ -111,4 +160,120 @@ const styles = StyleSheet.create({
+     includeFontPadding: false,
+     lineHeight: 20,
+   },
++  copyButton: {
++    backgroundColor: 'rgba(255, 255, 255, 0.2)',
++    paddingHorizontal: 12,
++    paddingVertical: 8,
++    borderRadius: 6,
++    borderWidth: 1,
++    borderColor: 'rgba(255, 255, 255, 0.3)',
++    marginLeft: 8,
++    justifyContent: 'center',
++    alignItems: 'center',
++  },
++  copyButtonText: {
++    fontSize: 14,
++    fontWeight: '600',
++    color: 'white',
++  },
++  // Modern "Oops" error screen styles
++  modernErrorContainer: {
++    backgroundColor: '#000000', // Pure black background
++    flex: 1,
++    justifyContent: 'center',
++    alignItems: 'center',
++    paddingHorizontal: 20,
++  },
++  modernErrorContent: {
++    alignItems: 'center',
++    maxWidth: 400,
++    width: '100%',
++  },
++  errorIconContainer: {
++    position: 'relative',
++    marginBottom: 30,
++  },
++  errorIcon: {
++    fontSize: 80,
++    textAlign: 'center',
++  },
++  errorIconBroken: {
++    position: 'absolute',
++    top: -10,
++    right: -20,
++    flexDirection: 'row',
++  },
++  brokenParts: {
++    fontSize: 20,
++    marginHorizontal: 2,
++    opacity: 0.7,
++  },
++  oopsTitle: {
++    fontSize: 48,
++    fontWeight: 'bold',
++    color: '#ffffff',
++    marginBottom: 10,
++    textAlign: 'center',
++  },
++  oopsSubtitle: {
++    fontSize: 18,
++    color: '#cccccc',
++    textAlign: 'center',
++    marginBottom: 40,
++    lineHeight: 24,
++  },
++  copyButtonModern: {
++    backgroundColor: '#ffffff',
++    paddingHorizontal: 30,
++    paddingVertical: 15,
++    borderRadius: 12,
++    marginBottom: 30,
++    shadowColor: '#000',
++    shadowOffset: {
++      width: 0,
++      height: 4,
++    },
++    shadowOpacity: 0.3,
++    shadowRadius: 8,
++    elevation: 8,
++  },
++  copyButtonTextModern: {
++    fontSize: 16,
++    fontWeight: '600',
++    color: '#000000',
++    textAlign: 'center',
++  },
++  detailsToggle: {
++    paddingVertical: 10,
++    paddingHorizontal: 20,
++    borderRadius: 8,
++    borderWidth: 1,
++    borderColor: '#333333',
++    marginBottom: 20,
++  },
++  detailsToggleText: {
++    fontSize: 14,
++    color: '#888888',
++    textAlign: 'center',
++  },
++  technicalDetails: {
++    backgroundColor: '#111111',
++    padding: 20,
++    borderRadius: 12,
++    width: '100%',
++    borderWidth: 1,
++    borderColor: '#333333',
++  },
++  technicalTitle: {
++    fontSize: 16,
++    fontWeight: '600',
++    color: '#ffffff',
++    marginBottom: 10,
++  },
++  technicalText: {
++    fontSize: 14,
++    color: '#cccccc',
++    lineHeight: 20,
++    marginBottom: 5,
++  },
+ });
+diff --git a/node_modules/react-native/Libraries/LogBox/UI/LogBoxStyle.js b/node_modules/react-native/Libraries/LogBox/UI/LogBoxStyle.js
+index 3ac3210..867742f 100644
+--- a/node_modules/react-native/Libraries/LogBox/UI/LogBoxStyle.js
++++ b/node_modules/react-native/Libraries/LogBox/UI/LogBoxStyle.js
+@@ -9,57 +9,57 @@
+  */
+ 
+ export function getBackgroundColor(opacity?: number): string {
+-  return `rgba(51, 51, 51, ${opacity == null ? 1 : opacity})`;
++  return `rgba(0, 0, 0, ${opacity == null ? 1 : opacity})`; // Pure black background (Vercel style)
+ }
+ 
+ export function getBackgroundLightColor(opacity?: number): string {
+-  return `rgba(69, 69, 69, ${opacity == null ? 1 : opacity})`;
++  return `rgba(10, 10, 10, ${opacity == null ? 1 : opacity})`; // Very dark gray
+ }
+ 
+ export function getBackgroundDarkColor(opacity?: number): string {
+-  return `rgba(34, 34, 34, ${opacity == null ? 1 : opacity})`;
++  return `rgba(0, 0, 0, ${opacity == null ? 1 : opacity})`; // Pure black
+ }
+ 
+ export function getWarningColor(opacity?: number): string {
+-  return `rgba(250, 186, 48, ${opacity == null ? 1 : opacity})`;
++  return `rgba(255, 255, 255, ${opacity == null ? 1 : opacity})`; // Pure white
+ }
+ 
+ export function getWarningDarkColor(opacity?: number): string {
+-  return `rgba(224, 167, 8, ${opacity == null ? 1 : opacity})`;
++  return `rgba(240, 240, 240, ${opacity == null ? 1 : opacity})`; // Light gray
+ }
+ 
+ export function getFatalColor(opacity?: number): string {
+-  return `rgba(243, 83, 105, ${opacity == null ? 1 : opacity})`;
++  return `rgba(255, 255, 255, ${opacity == null ? 1 : opacity})`; // Pure white
+ }
+ 
+ export function getFatalDarkColor(opacity?: number): string {
+-  return `rgba(208, 75, 95, ${opacity == null ? 1 : opacity})`;
++  return `rgba(240, 240, 240, ${opacity == null ? 1 : opacity})`; // Light gray
+ }
+ 
+ export function getErrorColor(opacity?: number): string {
+-  return `rgba(243, 83, 105, ${opacity == null ? 1 : opacity})`;
++  return `rgba(255, 255, 255, ${opacity == null ? 1 : opacity})`; // Pure white
+ }
+ 
+ export function getErrorDarkColor(opacity?: number): string {
+-  return `rgba(208, 75, 95, ${opacity == null ? 1 : opacity})`;
++  return `rgba(240, 240, 240, ${opacity == null ? 1 : opacity})`; // Light gray
+ }
+ 
+ export function getLogColor(opacity?: number): string {
+-  return `rgba(119, 119, 119, ${opacity == null ? 1 : opacity})`;
++  return `rgba(200, 200, 200, ${opacity == null ? 1 : opacity})`; // Light gray for logs
+ }
+ 
+ export function getWarningHighlightColor(opacity?: number): string {
+-  return `rgba(252, 176, 29, ${opacity == null ? 1 : opacity})`;
++  return `rgba(255, 255, 255, ${opacity == null ? 1 : opacity})`; // White highlight
+ }
+ 
+ export function getDividerColor(opacity?: number): string {
+-  return `rgba(255, 255, 255, ${opacity == null ? 1 : opacity})`;
++  return `rgba(40, 40, 40, ${opacity == null ? 1 : opacity})`; // Dark divider
+ }
+ 
+ export function getHighlightColor(opacity?: number): string {
+-  return `rgba(252, 176, 29, ${opacity == null ? 1 : opacity})`;
++  return `rgba(255, 255, 255, ${opacity == null ? 1 : opacity})`; // White highlight
+ }
+ 
+ export function getTextColor(opacity?: number): string {
+-  return `rgba(255, 255, 255, ${opacity == null ? 1 : opacity})`;
++  return `rgba(255, 255, 255, ${opacity == null ? 1 : opacity})`; // Pure white text
+ }

@@ -1,0 +1,157 @@
+diff --git a/node_modules/@expo/metro-runtime/src/error-overlay/UI/LogBoxStyle.ts b/node_modules/@expo/metro-runtime/src/error-overlay/UI/LogBoxStyle.ts
+index 5b4862e..ebf71d2 100644
+--- a/node_modules/@expo/metro-runtime/src/error-overlay/UI/LogBoxStyle.ts
++++ b/node_modules/@expo/metro-runtime/src/error-overlay/UI/LogBoxStyle.ts
+@@ -7,58 +7,57 @@
+  */
+ 
+ export function getBackgroundColor(opacity?: number): string {
+-  return `rgba(0, 0, 0, ${opacity == null ? 1 : opacity})`;
+-  // return `rgba(51, 51, 51, ${opacity == null ? 1 : opacity})`;
++  return `rgba(0, 0, 0, ${opacity == null ? 1 : opacity})`; // Pure black background (Vercel style)
+ }
+ 
+ export function getBackgroundLightColor(opacity?: number): string {
+-  return `rgba(69, 69, 69, ${opacity == null ? 1 : opacity})`;
++  return `rgba(10, 10, 10, ${opacity == null ? 1 : opacity})`; // Very dark gray
+ }
+ 
+ export function getBackgroundDarkColor(opacity?: number): string {
+-  return `rgba(34, 34, 34, ${opacity == null ? 1 : opacity})`;
++  return `rgba(0, 0, 0, ${opacity == null ? 1 : opacity})`; // Pure black
+ }
+ 
+ export function getWarningColor(opacity?: number): string {
+-  return `rgba(250, 186, 48, ${opacity == null ? 1 : opacity})`;
++  return `rgba(255, 255, 255, ${opacity == null ? 1 : opacity})`; // Pure white
+ }
+ 
+ export function getWarningDarkColor(opacity?: number): string {
+-  return `rgba(224, 167, 8, ${opacity == null ? 1 : opacity})`;
++  return `rgba(240, 240, 240, ${opacity == null ? 1 : opacity})`; // Light gray
+ }
+ 
+ export function getFatalColor(opacity?: number): string {
+-  return `rgba(243, 83, 105, ${opacity == null ? 1 : opacity})`;
++  return `rgba(255, 255, 255, ${opacity == null ? 1 : opacity})`; // Pure white
+ }
+ 
+ export function getFatalDarkColor(opacity?: number): string {
+-  return `rgba(208, 75, 95, ${opacity == null ? 1 : opacity})`;
++  return `rgba(240, 240, 240, ${opacity == null ? 1 : opacity})`; // Light gray
+ }
+ 
+ export function getErrorColor(opacity?: number): string {
+-  return `rgba(243, 83, 105, ${opacity == null ? 1 : opacity})`;
++  return `rgba(255, 255, 255, ${opacity == null ? 1 : opacity})`; // Pure white
+ }
+ 
+ export function getErrorDarkColor(opacity?: number): string {
+-  return `rgba(208, 75, 95, ${opacity == null ? 1 : opacity})`;
++  return `rgba(240, 240, 240, ${opacity == null ? 1 : opacity})`; // Light gray
+ }
+ 
+ export function getLogColor(opacity?: number): string {
+-  return `rgba(119, 119, 119, ${opacity == null ? 1 : opacity})`;
++  return `rgba(200, 200, 200, ${opacity == null ? 1 : opacity})`; // Light gray for logs
+ }
+ 
+ export function getWarningHighlightColor(opacity?: number): string {
+-  return `rgba(252, 176, 29, ${opacity == null ? 1 : opacity})`;
++  return `rgba(255, 255, 255, ${opacity == null ? 1 : opacity})`; // White highlight
+ }
+ 
+ export function getDividerColor(opacity?: number): string {
+-  return `rgba(255, 255, 255, ${opacity == null ? 1 : opacity})`;
++  return `rgba(40, 40, 40, ${opacity == null ? 1 : opacity})`; // Dark divider
+ }
+ 
+ export function getHighlightColor(opacity?: number): string {
+-  return `rgba(252, 176, 29, ${opacity == null ? 1 : opacity})`;
++  return `rgba(255, 255, 255, ${opacity == null ? 1 : opacity})`; // White highlight
+ }
+ 
+ export function getTextColor(opacity?: number): string {
+-  return `rgba(255, 255, 255, ${opacity == null ? 1 : opacity})`;
++  return `rgba(255, 255, 255, ${opacity == null ? 1 : opacity})`; // Pure white text
+ }
+diff --git a/node_modules/@expo/metro-runtime/src/error-overlay/overlay/LogBoxInspectorHeader.tsx b/node_modules/@expo/metro-runtime/src/error-overlay/overlay/LogBoxInspectorHeader.tsx
+index fb2d36d..6ca0403 100644
+--- a/node_modules/@expo/metro-runtime/src/error-overlay/overlay/LogBoxInspectorHeader.tsx
++++ b/node_modules/@expo/metro-runtime/src/error-overlay/overlay/LogBoxInspectorHeader.tsx
+@@ -6,7 +6,8 @@
+  * LICENSE file in the root directory of this source tree.
+  */
+ import React from 'react';
+-import { Image, Platform, StatusBar, StyleSheet, Text, View } from 'react-native';
++import { Image, Platform, StatusBar, StyleSheet, Text, View, TouchableOpacity, Alert } from 'react-native';
++import * as Clipboard from 'expo-clipboard';
+ 
+ import type { LogLevel } from '../Data/LogBoxLog';
+ import { useLogs } from '../Data/LogContext';
+@@ -22,6 +23,26 @@ export function LogBoxInspectorHeader(props: Props) {
+   const { selectedLogIndex: selectedIndex, logs } = useLogs();
+   const total = logs.length;
+ 
++  const handleCopyError = async () => {
++    const currentLog = logs[selectedIndex];
++    if (!currentLog) return;
++
++    const errorText = `Error Details:
++Message: ${currentLog.message?.content || 'No message'}
++Stack Trace:
++${currentLog.stack || 'No stack trace available'}
++Component Stack:
++${currentLog.componentStack || 'No component stack available'}
++Timestamp: ${new Date().toISOString()}`;
++
++    try {
++      await Clipboard.setStringAsync(errorText);
++      Alert.alert('📋 Copied!', 'Error details have been copied to clipboard');
++    } catch (error) {
++      Alert.alert('Error', 'Failed to copy error details');
++    }
++  };
++
+   if (props.level === 'syntax') {
+     return (
+       <View style={[styles.safeArea, styles[props.level]]}>
+@@ -29,6 +50,9 @@ export function LogBoxInspectorHeader(props: Props) {
+           <View style={styles.title}>
+             <Text style={styles.titleText}>Failed to compile</Text>
+           </View>
++          <TouchableOpacity style={styles.copyButton} onPress={handleCopyError}>
++            <Text style={styles.copyButtonText}>📋 Copy</Text>
++          </TouchableOpacity>
+         </View>
+       </View>
+     );
+@@ -57,6 +81,9 @@ export function LogBoxInspectorHeader(props: Props) {
+           image={require('@expo/metro-runtime/assets/chevron-right.png')}
+           onPress={() => props.onSelectIndex(nextIndex)}
+         />
++        <TouchableOpacity style={styles.copyButton} onPress={handleCopyError}>
++          <Text style={styles.copyButtonText}>📋 Copy</Text>
++        </TouchableOpacity>
+       </View>
+     </View>
+   );
+@@ -164,4 +191,18 @@ const styles = StyleSheet.create({
+   safeArea: {
+     paddingTop: process.env.EXPO_OS !== 'ios' ? StatusBar.currentHeight : 40,
+   },
++  copyButton: {
++    backgroundColor: 'rgba(255, 255, 255, 0.2)',
++    paddingHorizontal: 12,
++    paddingVertical: 8,
++    borderRadius: 6,
++    borderWidth: 1,
++    borderColor: 'rgba(255, 255, 255, 0.3)',
++    marginLeft: 8,
++  },
++  copyButtonText: {
++    fontSize: 14,
++    fontWeight: '600',
++    color: 'white',
++  },
+ });

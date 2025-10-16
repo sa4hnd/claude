@@ -32,11 +32,13 @@
           "resizeMode": "contain",
           "backgroundColor": "#FAFAFA"
         }
-      ]
+      ],
+      "expo-font",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true
     },
-    "displayName": "Hello World"
+    
   }
 }

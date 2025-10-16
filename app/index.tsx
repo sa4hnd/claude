@@ -11,8 +11,8 @@ export default function Index() {
         style={styles.icon}
         contentFit="contain"
       />
-      <Text style={styles.title}>Building your app…</Text>
-      <Text style={styles.subtitle}>Please wait.</Text>
+      <Text style={styles.title}>Welcome</Text>
+      <Text style={styles.subtitle}>Your app template is ready.</Text>
     </View>
   );
 }
@@ -22,7 +22,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#fdf2f8",
+    backgroundColor: "#ffffff",
     padding: 32,
   },
   icon: {

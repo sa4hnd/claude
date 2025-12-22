@@ -3,11 +3,11 @@
   "main": "expo-router/entry",
   "version": "1.0.0",
   "scripts": {
-    "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
-    "web": "expo start --web",
-    "dev": "npx expo start --tunnel --port 3000",
+    "start": "node scripts/expo-logger.js start",
+    "android": "node scripts/expo-logger.js start --android",
+    "ios": "node scripts/expo-logger.js start --ios",
+    "web": "node scripts/expo-logger.js start --web",
+    "dev": "node scripts/expo-logger.js start --tunnel --port 3000",
     "lint": "expo lint",
     "postinstall": "patch-package"
   },

@@ -1,6 +1,7 @@
 /*
 IMPORTANT NOTICE: DO NOT REMOVE
-This is a minimal client for the OpenRouter API. You may update this service, but you should not need to.
+This is a minimal client for the OpenRouter API proxy.
+In production (E2B sandbox), requests go through a secure proxy that adds the real API key.
 
 valid model names (examples):
 openai/gpt-4.1
@@ -14,16 +15,26 @@ export type OpenRouterClient = {
 };
 
 export const getOpenRouterClient = (): OpenRouterClient => {
-  const apiKey = process.env.EXPO_PUBLIC_OPENROUTER_API_KEY;
-  if (!apiKey) {
-    console.warn("OpenRouter API key not found in environment variables");
+  const projectId = process.env.EXPO_PUBLIC_PROJECT_ID || '';
+  const sessionToken = process.env.EXPO_PUBLIC_SESSION_TOKEN || '';
+
+  // Construct proxy URL from project ID
+  // In E2B sandbox: https://4000-{projectId}.e2b.app/v1
+  // Local dev fallback: http://localhost:4000/v1
+  let baseUrl = 'http://localhost:4000/v1';
+  if (projectId && projectId !== 'local') {
+    baseUrl = `https://4000-${projectId}.e2b.app/v1`;
   }
+
+  if (!sessionToken) {
+    console.warn('AI session token not found in environment variables');
+  }
+
   return {
-    // Hardcoded base URL for OpenRouter API
-    baseUrl: "https://openrouter.ai/api/v1",
+    baseUrl,
     headers: {
-      "Content-Type": "application/json",
-      Authorization: apiKey ? `Bearer ${apiKey}` : "",
+      'Content-Type': 'application/json',
+      'X-Session-Token': sessionToken,
     },
   };
 };

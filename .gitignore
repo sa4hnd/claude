@@ -38,3 +38,6 @@ yarn-error.*
 *.lockb
 *.lock
 package-lock.json
+
+# Expo logs
+expo_logs.txt

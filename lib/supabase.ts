@@ -1,58 +1,20 @@
+import "expo-sqlite/localStorage/install";
 import { createClient } from "@supabase/supabase-js";
-import { Platform } from "react-native";
 
 // Hardcoded Supabase credentials - DO NOT USE ENV VARIABLES
 const SUPABASE_URL = "https://hecyfnjahvmcegtunvdq.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhlY3lmbmphaHZtY2VndHVudmRxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjEyMzY1MjcsImV4cCI6MjA3NjgxMjUyN30.p9r2XHdgZ51WumLTEfDJdobWZhBGS3qIejF2UvTij80";
 
-// Create storage adapter based on platform
-const createStorageAdapter = () => {
-  if (Platform.OS === "web") {
-    // Web uses localStorage by default, return undefined to use Supabase's default
-    return undefined;
-  }
-
-  // For native, we need to dynamically import AsyncStorage
-  // But we'll use a simple in-memory fallback that persists via the storage.ts
-  const storage: { [key: string]: string } = {};
-  return {
-    getItem: async (key: string) => {
-      try {
-        const AsyncStorage = require("@react-native-async-storage/async-storage").default;
-        return await AsyncStorage.getItem(key);
-      } catch {
-        return storage[key] || null;
-      }
-    },
-    setItem: async (key: string, value: string) => {
-      try {
-        const AsyncStorage = require("@react-native-async-storage/async-storage").default;
-        await AsyncStorage.setItem(key, value);
-      } catch {
-        storage[key] = value;
-      }
-    },
-    removeItem: async (key: string) => {
-      try {
-        const AsyncStorage = require("@react-native-async-storage/async-storage").default;
-        await AsyncStorage.removeItem(key);
-      } catch {
-        delete storage[key];
-      }
-    },
-  };
-};
-
-// Initialize Supabase client with hardcoded credentials
+// Initialize Supabase client with localStorage from expo-sqlite
 export const supabase = createClient(
   "https://hecyfnjahvmcegtunvdq.supabase.co",
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhlY3lmbmphaHZtY2VndHVudmRxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjEyMzY1MjcsImV4cCI6MjA3NjgxMjUyN30.p9r2XHdgZ51WumLTEfDJdobWZhBGS3qIejF2UvTij80",
   {
     auth: {
-      storage: createStorageAdapter(),
+      storage: localStorage,
       autoRefreshToken: true,
       persistSession: true,
-      detectSessionInUrl: Platform.OS === "web",
+      detectSessionInUrl: false,
     },
   }
 );

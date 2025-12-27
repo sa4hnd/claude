@@ -1,13 +1,7 @@
 // metro.config.js
-const { getDefaultConfig } = require('@expo/metro-config');
+const { getDefaultConfig } = require("@expo/metro-config");
 
 const defaultConfig = getDefaultConfig(__dirname);
-
-// Add support for .mjs files (needed for Supabase)
-defaultConfig.resolver.sourceExts.push('mjs');
-
-// Ensure proper resolution of Supabase packages
-defaultConfig.resolver.resolverMainFields = ['react-native', 'browser', 'main', 'module'];
 
 module.exports = {
   ...defaultConfig,
@@ -17,7 +11,12 @@ module.exports = {
   },
   resolver: {
     ...defaultConfig.resolver,
-    sourceExts: [...defaultConfig.resolver.sourceExts, 'mjs'],
-    resolverMainFields: ['react-native', 'browser', 'main'],
+    // Add mjs support
+    sourceExts: [...defaultConfig.resolver.sourceExts, "mjs", "cjs"],
+    // Prioritize main field for CommonJS resolution
+    resolverMainFields: ["react-native", "main", "browser", "module"],
+    // Unstable settings to help with package resolution
+    unstable_enablePackageExports: true,
+    unstable_conditionNames: ["require", "import", "react-native"],
   },
 };

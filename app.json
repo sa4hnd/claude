@@ -1,21 +1,28 @@
 {
   "expo": {
-    "name": "Hello World",
-    "slug": "hello-world",
+    "name": "Claude",
+    "slug": "claude-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "myapp",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "dark",
     "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/images/splash.jpg",
+      "resizeMode": "cover",
+      "backgroundColor": "#2A2A2A"
+    },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "userInterfaceStyle": "dark"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
-      }
+        "backgroundColor": "#191919"
+      },
+      "userInterfaceStyle": "dark"
     },
     "web": {
       "bundler": "metro",
@@ -27,10 +34,9 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 200,
-          "resizeMode": "contain",
-          "backgroundColor": "#FAFAFA"
+          "image": "./assets/images/splash.jpg",
+          "resizeMode": "cover",
+          "backgroundColor": "#2A2A2A"
         }
       ],
       "expo-font",
@@ -38,7 +44,6 @@
     ],
     "experiments": {
       "typedRoutes": true
-    },
-    
+    }
   }
 }

@@ -11,12 +11,14 @@ module.exports = {
   },
   resolver: {
     ...defaultConfig.resolver,
-    // Add mjs support
+    // Add mjs and cjs support for Supabase packages
     sourceExts: [...defaultConfig.resolver.sourceExts, "mjs", "cjs"],
-    // Prioritize main field for CommonJS resolution
+    // Prioritize main field for CommonJS resolution (important for Supabase)
     resolverMainFields: ["react-native", "main", "browser", "module"],
-    // Unstable settings to help with package resolution
+    // Enable package exports for proper module resolution
     unstable_enablePackageExports: true,
-    unstable_conditionNames: ["require", "import", "react-native"],
+    unstable_conditionNames: ["require", "react-native", "import", "default"],
+    // Ensure .js files are resolved
+    assetExts: defaultConfig.resolver.assetExts.filter((ext) => ext !== "js"),
   },
 };

@@ -43,6 +43,7 @@ import {
 } from 'lucide-react-native';
 import { useChat } from '@/providers/ChatProvider';
 import { ImageAttachment, Message } from '@/lib/types/chat';
+import { AVAILABLE_MODELS } from '@/lib/ai/streaming-service';
 import { transcribeFromBase64 } from '@/lib/ai/transcription-service';
 import { colors, spacing, borderRadius, typography } from '@/constants/theme';
 import { getMaxContentWidth } from '@/lib/utils/responsive';
@@ -365,6 +366,11 @@ const MessageBubble = React.memo<MessageBubbleProps>(({ message, isLast, onRetry
   const isUser = message.role === 'user';
   const content = message.content || (message.isStreaming ? '' : '');
 
+  // Get model name from modelId
+  const modelName = message.modelId
+    ? AVAILABLE_MODELS.find(m => m.id === message.modelId)?.name || message.modelId
+    : null;
+
   const handleCopy = useCallback(() => {
     Clipboard.setStringAsync(content);
     triggerHaptic('light');
@@ -464,6 +470,9 @@ const MessageBubble = React.memo<MessageBubbleProps>(({ message, isLast, onRetry
             <RefreshCw size={14} color={colors.textMuted} />
             <Text style={styles.actionButtonText}>Retry</Text>
           </TouchableOpacity>
+          {modelName && (
+            <Text style={styles.modelNameText}>{modelName}</Text>
+          )}
         </View>
       )}
     </View>
@@ -1184,6 +1193,14 @@ const styles = StyleSheet.create({
   actionButtonText: {
     fontSize: 13,
     color: colors.textMuted,
+  },
+  modelNameText: {
+    fontSize: 12,
+    color: colors.textMuted,
+    opacity: 0.6,
+    marginLeft: spacing.sm,
+    alignSelf: 'center',
+    paddingVertical: spacing.xs,
   },
   messageImages: {
     flexDirection: 'row',

@@ -494,17 +494,29 @@ export async function streamChat(
     if (model.provider === 'anthropic') {
       await streamAnthropic(messagesWithMemory, model.id, callbacks, webSearchEnabled);
     } else if (model.provider === 'openai') {
-      // For OpenAI, use web_search tool in the request body when enabled
+      // For OpenAI Chat Completions, web search requires using specialized search models
+      // Map regular models to their search variants when web search is enabled
+      let modelId = model.id;
+      if (webSearchEnabled) {
+        const searchModelMap: Record<string, string> = {
+          'gpt-4o': 'gpt-4o-search-preview',
+          'gpt-4o-mini': 'gpt-4o-mini-search-preview',
+          'gpt-5.1': 'gpt-5-search-api',
+          'gpt-5.2': 'gpt-5-search-api',
+        };
+        if (searchModelMap[model.id]) {
+          modelId = searchModelMap[model.id];
+          console.log('[StreamChat] Using OpenAI search model:', modelId);
+        } else {
+          console.log('[StreamChat] Web search not available for this OpenAI model:', model.id);
+        }
+      }
+
       const requestBody: Record<string, unknown> = {
-        model: model.id,
+        model: modelId,
         messages: messagesWithMemory,
         max_completion_tokens: 64000,
       };
-
-      if (webSearchEnabled) {
-        console.log('[StreamChat] Adding web search tool for OpenAI');
-        requestBody.tools = [{ type: 'web_search' }];
-      }
 
       await streamOpenAIStyle(
         `${BASE_URL}/v1/chat/completions`,

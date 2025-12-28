@@ -385,6 +385,7 @@ export const [ChatProvider, useChat] = createContextHook(() => {
       id: generateId(),
       role: 'assistant',
       content: '',
+      modelId: selectedModel.id,
       createdAt: Date.now(),
       isStreaming: true,
     };

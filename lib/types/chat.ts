@@ -12,6 +12,7 @@ export interface Message {
   content: string;
   thinking?: string;
   images?: ImageAttachment[];
+  modelId?: string;
   createdAt: number;
   isStreaming?: boolean;
 }

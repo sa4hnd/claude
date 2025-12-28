@@ -22,6 +22,8 @@ import * as Clipboard from 'expo-clipboard';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system';
 import * as Haptics from 'expo-haptics';
 import { Audio } from 'expo-av';
 import { useMarkdown, type MarkedStyles, type useMarkdownHookOptions } from 'react-native-marked';
@@ -42,11 +44,20 @@ import {
   Globe,
 } from 'lucide-react-native';
 import { useChat } from '@/providers/ChatProvider';
-import { ImageAttachment, Message } from '@/lib/types/chat';
+import { ImageAttachment, FileAttachment, Message } from '@/lib/types/chat';
 import { AVAILABLE_MODELS } from '@/lib/ai/streaming-service';
 import { transcribeFromBase64 } from '@/lib/ai/transcription-service';
 import { colors, spacing, borderRadius, typography } from '@/constants/theme';
 import { getMaxContentWidth } from '@/lib/utils/responsive';
+
+// Helper to format file size
+const formatFileSize = (bytes: number): string => {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+};
 
 // Haptic feedback helper
 const triggerHaptic = (type: 'light' | 'medium' | 'heavy' | 'selection' = 'light') => {
@@ -521,9 +532,10 @@ interface AttachmentModalProps {
   visible: boolean;
   onClose: () => void;
   onPickImage: (useCamera: boolean) => void;
+  onPickFile: () => void;
 }
 
-const AttachmentModal = React.memo<AttachmentModalProps>(({ visible, onClose, onPickImage }) => {
+const AttachmentModal = React.memo<AttachmentModalProps>(({ visible, onClose, onPickImage, onPickFile }) => {
   const insets = useSafeAreaInsets();
   const slideAnim = useRef(new Animated.Value(0)).current;
   const overlayOpacity = useRef(new Animated.Value(0)).current;
@@ -568,6 +580,15 @@ const AttachmentModal = React.memo<AttachmentModalProps>(({ visible, onClose, on
       onPickImage(useCamera);
     }, 300);
   }, [onPickImage, onClose]);
+
+  const handlePickFile = useCallback(() => {
+    console.log('[AttachmentModal] handlePickFile called');
+    triggerHaptic('selection');
+    onClose();
+    setTimeout(() => {
+      onPickFile();
+    }, 300);
+  }, [onPickFile, onClose]);
 
   const handleClose = useCallback(() => {
     console.log('[AttachmentModal] handleClose called');
@@ -614,7 +635,7 @@ const AttachmentModal = React.memo<AttachmentModalProps>(({ visible, onClose, on
 
             <TouchableOpacity
               style={styles.attachmentGridItem}
-              onPress={handleClose}
+              onPress={handlePickFile}
               activeOpacity={0.7}
             >
               <View style={[styles.attachmentIconCircle, { backgroundColor: '#5856D6' }]}>
@@ -640,6 +661,7 @@ export default function ChatInput() {
   const { sendMessage, isStreaming, stopStreaming, selectedModel, activeConversation, retryMessage, webSearchEnabled, setWebSearchEnabled } = useChat();
   const [inputText, setInputText] = useState('');
   const [attachedImages, setAttachedImages] = useState<ImageAttachment[]>([]);
+  const [attachedFiles, setAttachedFiles] = useState<FileAttachment[]>([]);
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [showAttachMenu, setShowAttachMenu] = useState(false);
@@ -734,23 +756,25 @@ export default function ChatInput() {
 
   const handleSend = useCallback(async () => {
     const trimmedText = inputText.trim();
-    if (!trimmedText && attachedImages.length === 0) return;
+    if (!trimmedText && attachedImages.length === 0 && attachedFiles.length === 0) return;
     if (isStreaming) return;
 
     triggerHaptic('medium');
     const imagesToSend = attachedImages.length > 0 ? [...attachedImages] : undefined;
+    const filesToSend = attachedFiles.length > 0 ? [...attachedFiles] : undefined;
     setInputText('');
     setAttachedImages([]);
+    setAttachedFiles([]);
     setUserScrolled(false);
     Keyboard.dismiss();
 
-    await sendMessage(trimmedText, imagesToSend);
+    await sendMessage(trimmedText, imagesToSend, filesToSend);
 
     // Force scroll to bottom after sending message
     setTimeout(() => {
       flatListRef.current?.scrollToEnd({ animated: true });
     }, 150);
-  }, [inputText, attachedImages, isStreaming, sendMessage]);
+  }, [inputText, attachedImages, attachedFiles, isStreaming, sendMessage]);
 
   const pickImage = useCallback(async (useCamera: boolean) => {
     console.log('[ChatInput] pickImage called, useCamera:', useCamera);
@@ -833,6 +857,58 @@ export default function ChatInput() {
       console.error('[ChatInput] Error picking image:', error);
       Alert.alert('Error', 'Failed to pick image. Please try again.');
     }
+  }, []);
+
+  const pickFile = useCallback(async () => {
+    console.log('[ChatInput] pickFile called');
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/pdf', 'text/plain', 'text/csv', 'application/json', 'text/markdown'],
+        copyToCacheDirectory: true,
+        multiple: true,
+      });
+
+      console.log('[ChatInput] Document picker result:', result.canceled ? 'canceled' : 'selected');
+
+      if (!result.canceled && result.assets) {
+        const newFiles: FileAttachment[] = await Promise.all(
+          result.assets.map(async (asset) => {
+            let base64: string | undefined;
+
+            // Read file as base64
+            if (asset.uri && FileSystem.documentDirectory) {
+              try {
+                const fileContent = await FileSystem.readAsStringAsync(asset.uri, {
+                  encoding: FileSystem.EncodingType.Base64,
+                });
+                base64 = `data:${asset.mimeType || 'application/pdf'};base64,${fileContent}`;
+                console.log('[ChatInput] File loaded, size:', asset.size, 'bytes');
+              } catch (err) {
+                console.error('[ChatInput] Error reading file:', err);
+              }
+            }
+
+            return {
+              id: Date.now().toString(36) + Math.random().toString(36).substr(2, 9),
+              uri: asset.uri,
+              name: asset.name,
+              mimeType: asset.mimeType || 'application/octet-stream',
+              size: asset.size || 0,
+              base64,
+            };
+          })
+        );
+
+        setAttachedFiles((prev) => [...prev, ...newFiles]);
+      }
+    } catch (error) {
+      console.error('[ChatInput] Error picking file:', error);
+      Alert.alert('Error', 'Failed to pick file. Please try again.');
+    }
+  }, []);
+
+  const removeFile = useCallback((id: string) => {
+    setAttachedFiles((prev) => prev.filter((f) => f.id !== id));
   }, []);
 
   const removeImage = useCallback((id: string) => {
@@ -1011,16 +1087,31 @@ export default function ChatInput() {
         visible={showAttachMenu}
         onClose={() => setShowAttachMenu(false)}
         onPickImage={pickImage}
+        onPickFile={pickFile}
       />
 
       {/* Attachment Preview */}
-      {attachedImages.length > 0 && (
+      {(attachedImages.length > 0 || attachedFiles.length > 0) && (
         <View style={styles.attachmentPreview}>
           {attachedImages.map((img) => (
             <View key={img.id} style={styles.attachmentItem}>
               <Image source={{ uri: img.uri }} style={styles.attachmentImage} contentFit="cover" />
               <TouchableOpacity style={styles.removeAttachment} onPress={() => removeImage(img.id)}>
                 <X size={12} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+          ))}
+          {attachedFiles.map((file) => (
+            <View key={file.id} style={styles.fileAttachmentItem}>
+              <View style={styles.fileIconContainer}>
+                <FileText size={24} color={colors.accent} />
+              </View>
+              <View style={styles.fileInfo}>
+                <Text style={styles.fileName} numberOfLines={1}>{file.name}</Text>
+                <Text style={styles.fileSize}>{formatFileSize(file.size)}</Text>
+              </View>
+              <TouchableOpacity style={styles.removeFileButton} onPress={() => removeFile(file.id)}>
+                <X size={14} color={colors.textMuted} />
               </TouchableOpacity>
             </View>
           ))}
@@ -1228,9 +1319,11 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   messageImage: {
-    width: 120,
-    height: 90,
-    borderRadius: borderRadius.md,
+    width: 80,
+    height: 60,
+    borderRadius: borderRadius.sm,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
   },
   emptyState: {
     flex: 1,
@@ -1412,6 +1505,41 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  fileAttachmentItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    gap: spacing.xs,
+    maxWidth: 200,
+  },
+  fileIconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: borderRadius.sm,
+    backgroundColor: 'rgba(217, 119, 87, 0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fileInfo: {
+    flex: 1,
+    minWidth: 0,
+  },
+  fileName: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: colors.text,
+  },
+  fileSize: {
+    fontSize: 11,
+    color: colors.textMuted,
+    marginTop: 1,
+  },
+  removeFileButton: {
+    padding: spacing.xs,
   },
   recordingBar: {
     flexDirection: 'row',

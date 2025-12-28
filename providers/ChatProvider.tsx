@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Platform } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import createContextHook from '@nkzw/create-context-hook';
-import { Conversation, Message, ImageAttachment } from '@/lib/types/chat';
+import { Conversation, Message, ImageAttachment, FileAttachment } from '@/lib/types/chat';
 import { Model, AVAILABLE_MODELS, streamChat, ChatMessage, MessageContent } from '@/lib/ai/streaming-service';
 import { addMemory, type MemoryMessage } from '@/lib/ai/memory-service';
 import { storage } from '@/lib/storage';
@@ -365,7 +365,8 @@ export const [ChatProvider, useChat] = createContextHook(() => {
 
   const sendMessage = useCallback(async (
     content: string,
-    images?: ImageAttachment[]
+    images?: ImageAttachment[],
+    files?: FileAttachment[]
   ): Promise<void> => {
     let conversationId = activeConversationId;
 
@@ -378,6 +379,7 @@ export const [ChatProvider, useChat] = createContextHook(() => {
       role: 'user',
       content,
       images,
+      files,
       createdAt: Date.now(),
     };
 
@@ -498,18 +500,37 @@ export const [ChatProvider, useChat] = createContextHook(() => {
     const allMessages = conversation ? [...conversation.messages, userMessage] : [userMessage];
 
     const chatMessages: ChatMessage[] = allMessages.map(msg => {
-      if (msg.images && msg.images.length > 0 && selectedModel.supportsImages) {
+      const hasImages = msg.images && msg.images.length > 0 && selectedModel.supportsImages;
+      const hasFiles = msg.files && msg.files.length > 0;
+
+      if (hasImages || hasFiles) {
         const contentArray: MessageContent[] = [
           { type: 'text', text: msg.content }
         ];
-        msg.images.forEach(img => {
-          if (img.base64) {
-            contentArray.push({
-              type: 'image_url',
-              image_url: { url: img.base64 }
-            });
-          }
-        });
+        if (hasImages && msg.images) {
+          msg.images.forEach(img => {
+            if (img.base64) {
+              contentArray.push({
+                type: 'image_url',
+                image_url: { url: img.base64 }
+              });
+            }
+          });
+        }
+        if (hasFiles && msg.files) {
+          msg.files.forEach(file => {
+            if (file.base64) {
+              contentArray.push({
+                type: 'document',
+                document: {
+                  url: file.base64,
+                  name: file.name,
+                  mimeType: file.mimeType
+                }
+              });
+            }
+          });
+        }
         return { role: msg.role, content: contentArray };
       }
       return { role: msg.role, content: msg.content };

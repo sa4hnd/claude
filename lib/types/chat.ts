@@ -6,12 +6,22 @@ export interface ImageAttachment {
   height?: number;
 }
 
+export interface FileAttachment {
+  id: string;
+  uri: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  base64?: string;
+}
+
 export interface Message {
   id: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
   thinking?: string;
   images?: ImageAttachment[];
+  files?: FileAttachment[];
   modelId?: string;
   createdAt: number;
   isStreaming?: boolean;

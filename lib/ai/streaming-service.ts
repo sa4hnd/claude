@@ -45,9 +45,10 @@ export const AVAILABLE_MODELS: Model[] = [
 ];
 
 export interface MessageContent {
-  type: 'text' | 'image_url';
+  type: 'text' | 'image_url' | 'document';
   text?: string;
   image_url?: { url: string };
+  document?: { url: string; name?: string; mimeType?: string };
 }
 
 export interface ChatMessage {
@@ -310,6 +311,21 @@ async function streamAnthropic(
             const mediaType = meta.split(':')[1].split(';')[0];
             return {
               type: 'image' as const,
+              source: {
+                type: 'base64' as const,
+                media_type: mediaType,
+                data: data,
+              },
+            };
+          }
+        }
+        if (c.type === 'document' && c.document) {
+          const url = c.document.url;
+          if (url.startsWith('data:')) {
+            const [meta, data] = url.split(',');
+            const mediaType = meta.split(':')[1].split(';')[0];
+            return {
+              type: 'document' as const,
               source: {
                 type: 'base64' as const,
                 media_type: mediaType,

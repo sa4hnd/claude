@@ -54,6 +54,7 @@ export const [ChatProvider, useChat] = createContextHook(() => {
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
   const [streamingThinking, setStreamingThinking] = useState('');
+  const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const batchBufferRef = useRef<string>('');
   const thinkingBufferRef = useRef<string>('');
@@ -686,7 +687,7 @@ export const [ChatProvider, useChat] = createContextHook(() => {
           streamingConversationIdRef.current = null;
         },
         signal: abortController.signal,
-      }, memoryUserId);
+      }, memoryUserId, webSearchEnabled);
     } catch (error) {
       console.error('[ChatProvider] Send message error:', error);
     } finally {
@@ -695,7 +696,7 @@ export const [ChatProvider, useChat] = createContextHook(() => {
       setStreamingThinking('');
       abortControllerRef.current = null;
     }
-  }, [activeConversationId, conversations, selectedModel, createConversation, triggerStreamingHaptic, isAuthenticated, user?.id, user?.email]);
+  }, [activeConversationId, conversations, selectedModel, createConversation, triggerStreamingHaptic, isAuthenticated, user?.id, user?.email, webSearchEnabled]);
 
   const stopStreaming = useCallback(async () => {
     if (batchTimeoutRef.current) {
@@ -780,6 +781,8 @@ export const [ChatProvider, useChat] = createContextHook(() => {
     isStreaming,
     streamingContent,
     streamingThinking,
+    webSearchEnabled,
+    setWebSearchEnabled,
     createConversation,
     deleteConversation,
     clearAllConversations,

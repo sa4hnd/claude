@@ -285,11 +285,15 @@ async function streamOpenAIStyle(
 async function streamAnthropic(
   messages: ChatMessage[],
   model: string,
-  callbacks: StreamCallbacks
+  callbacks: StreamCallbacks,
+  webSearchEnabled?: boolean
 ): Promise<void> {
   console.log('[Streaming] Starting Anthropic stream with model:', model);
   console.log('[Streaming] Anthropic API key prefix:', API_KEYS.anthropic.substring(0, 15) + '...');
   console.log('[Streaming] Messages count:', messages.length);
+  if (webSearchEnabled) {
+    console.log('[Streaming] Web search tool enabled');
+  }
 
   const anthropicMessages = messages
     .filter(m => m.role !== 'system')
@@ -344,6 +348,17 @@ async function streamAnthropic(
       type: 'enabled',
       budget_tokens: 16000,
     };
+  }
+
+  // Add web search tool if enabled
+  if (webSearchEnabled) {
+    requestBody.tools = [
+      {
+        type: 'web_search_20250305',
+        name: 'web_search',
+        max_uses: 5,
+      }
+    ];
   }
 
   const response = await streamingFetch(`${BASE_URL}/v1/messages`, {
@@ -421,9 +436,13 @@ export async function streamChat(
   messages: ChatMessage[],
   model: Model,
   callbacks: StreamCallbacks,
-  userId?: string
+  userId?: string,
+  webSearchEnabled?: boolean
 ): Promise<void> {
   console.log('[StreamChat] Starting chat with model:', model.name);
+  if (webSearchEnabled) {
+    console.log('[StreamChat] Web search enabled');
+  }
 
   let messagesWithMemory = messages;
 
@@ -473,12 +492,24 @@ export async function streamChat(
 
   try {
     if (model.provider === 'anthropic') {
-      await streamAnthropic(messagesWithMemory, model.id, callbacks);
+      await streamAnthropic(messagesWithMemory, model.id, callbacks, webSearchEnabled);
     } else if (model.provider === 'openai') {
+      // For OpenAI, use web_search tool in the request body when enabled
+      const requestBody: Record<string, unknown> = {
+        model: model.id,
+        messages: messagesWithMemory,
+        max_completion_tokens: 64000,
+      };
+
+      if (webSearchEnabled) {
+        console.log('[StreamChat] Adding web search tool for OpenAI');
+        requestBody.tools = [{ type: 'web_search' }];
+      }
+
       await streamOpenAIStyle(
         `${BASE_URL}/v1/chat/completions`,
         { Authorization: `Bearer ${API_KEYS.openai}` },
-        { model: model.id, messages: messagesWithMemory, max_completion_tokens: 64000 },
+        requestBody,
         callbacks
       );
     } else if (model.provider === 'xai') {

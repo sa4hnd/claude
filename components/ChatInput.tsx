@@ -39,6 +39,7 @@ import {
   Brain,
   Copy,
   RefreshCw,
+  Globe,
 } from 'lucide-react-native';
 import { useChat } from '@/providers/ChatProvider';
 import { ImageAttachment, Message } from '@/lib/types/chat';
@@ -627,7 +628,7 @@ AttachmentModal.displayName = 'AttachmentModal';
 
 export default function ChatInput() {
   const insets = useSafeAreaInsets();
-  const { sendMessage, isStreaming, stopStreaming, selectedModel, activeConversation, retryMessage } = useChat();
+  const { sendMessage, isStreaming, stopStreaming, selectedModel, activeConversation, retryMessage, webSearchEnabled, setWebSearchEnabled } = useChat();
   const [inputText, setInputText] = useState('');
   const [attachedImages, setAttachedImages] = useState<ImageAttachment[]>([]);
   const [isRecording, setIsRecording] = useState(false);
@@ -1044,6 +1045,15 @@ export default function ChatInput() {
               />
             )}
             <View style={styles.inputActions}>
+              <TouchableOpacity
+                style={[styles.inputActionButton, webSearchEnabled && styles.inputActionButtonActive]}
+                onPress={() => {
+                  triggerHaptic('light');
+                  setWebSearchEnabled(!webSearchEnabled);
+                }}
+              >
+                <Globe size={20} color={webSearchEnabled ? colors.accent : colors.textMuted} />
+              </TouchableOpacity>
               {supportsImages && (
                 <TouchableOpacity style={styles.inputActionButton} onPress={() => setShowAttachMenu(true)}>
                   <Plus size={20} color={colors.textMuted} />
@@ -1300,6 +1310,10 @@ const styles = StyleSheet.create({
         opacity: 0.7,
       },
     }),
+  },
+  inputActionButtonActive: {
+    backgroundColor: 'rgba(217, 119, 87, 0.15)',
+    borderRadius: 18,
   },
   sendButton: {
     width: 36,

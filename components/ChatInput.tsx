@@ -801,13 +801,32 @@ export default function ChatInput() {
 
       console.log('[ChatInput] Picker result:', result.canceled ? 'canceled' : 'selected');
       if (!result.canceled && result.assets) {
-        const newImages: ImageAttachment[] = result.assets.map((asset) => ({
-          id: Date.now().toString(36) + Math.random().toString(36).substr(2, 9),
-          uri: asset.uri,
-          base64: asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : undefined,
-          width: asset.width,
-          height: asset.height,
-        }));
+        const newImages: ImageAttachment[] = result.assets.map((asset) => {
+          // Detect image type from base64 header or default to jpeg
+          let mimeType = 'image/jpeg';
+          if (asset.base64) {
+            // Check magic bytes to detect actual image format
+            const header = asset.base64.substring(0, 20);
+            if (header.startsWith('/9j/')) {
+              mimeType = 'image/jpeg';
+            } else if (header.startsWith('iVBORw')) {
+              mimeType = 'image/png';
+            } else if (header.startsWith('R0lGOD')) {
+              mimeType = 'image/gif';
+            } else if (header.startsWith('UklGR')) {
+              mimeType = 'image/webp';
+            }
+            console.log('[ChatInput] Detected image type:', mimeType);
+          }
+
+          return {
+            id: Date.now().toString(36) + Math.random().toString(36).substr(2, 9),
+            uri: asset.uri,
+            base64: asset.base64 ? `data:${mimeType};base64,${asset.base64}` : undefined,
+            width: asset.width,
+            height: asset.height,
+          };
+        });
         setAttachedImages((prev) => [...prev, ...newImages]);
       }
     } catch (error) {
@@ -1209,8 +1228,8 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   messageImage: {
-    width: 200,
-    height: 150,
+    width: 120,
+    height: 90,
     borderRadius: borderRadius.md,
   },
   emptyState: {

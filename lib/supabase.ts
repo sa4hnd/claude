@@ -1,17 +1,45 @@
-import "expo-sqlite/localStorage/install";
+import { Platform } from "react-native";
 import { createClient } from "@supabase/supabase-js";
 
 // Hardcoded Supabase credentials - DO NOT USE ENV VARIABLES
 const SUPABASE_URL = "https://hecyfnjahvmcegtunvdq.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhlY3lmbmphaHZtY2VndHVudmRxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjEyMzY1MjcsImV4cCI6MjA3NjgxMjUyN30.p9r2XHdgZ51WumLTEfDJdobWZhBGS3qIejF2UvTij80";
 
-// Initialize Supabase client with localStorage from expo-sqlite
+// Memory storage for SSR - acts as a fallback when window/localStorage isn't available
+const memoryStorage: { [key: string]: string } = {};
+const createMemoryStorage = () => ({
+  getItem: (key: string) => memoryStorage[key] ?? null,
+  setItem: (key: string, value: string) => { memoryStorage[key] = value; },
+  removeItem: (key: string) => { delete memoryStorage[key]; },
+});
+
+// Get appropriate storage based on platform and environment
+const getStorage = () => {
+  // Check if we're on web and window exists (client-side)
+  if (Platform.OS === "web") {
+    if (typeof window !== "undefined" && window.localStorage) {
+      return window.localStorage;
+    }
+    // SSR fallback
+    return createMemoryStorage();
+  }
+  // Native platforms - use AsyncStorage dynamically to avoid SSR issues
+  try {
+    const AsyncStorage = require("@react-native-async-storage/async-storage").default;
+    return AsyncStorage;
+  } catch {
+    return createMemoryStorage();
+  }
+};
+const storage = getStorage();
+
+// Initialize Supabase client with platform-appropriate storage
 export const supabase = createClient(
-  "https://hecyfnjahvmcegtunvdq.supabase.co",
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhlY3lmbmphaHZtY2VndHVudmRxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjEyMzY1MjcsImV4cCI6MjA3NjgxMjUyN30.p9r2XHdgZ51WumLTEfDJdobWZhBGS3qIejF2UvTij80",
+  SUPABASE_URL,
+  SUPABASE_ANON_KEY,
   {
     auth: {
-      storage: localStorage,
+      storage: storage,
       autoRefreshToken: true,
       persistSession: true,
       detectSessionInUrl: false,

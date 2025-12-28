@@ -15,14 +15,24 @@
     },
     "ios": {
       "supportsTablet": true,
-      "userInterfaceStyle": "dark"
+      "userInterfaceStyle": "dark",
+      "splash": {
+        "image": "./assets/images/splash.jpg",
+        "resizeMode": "cover",
+        "backgroundColor": "#2A2A2A"
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#191919"
       },
-      "userInterfaceStyle": "dark"
+      "userInterfaceStyle": "dark",
+      "splash": {
+        "image": "./assets/images/splash.jpg",
+        "resizeMode": "cover",
+        "backgroundColor": "#2A2A2A"
+      }
     },
     "web": {
       "bundler": "metro",

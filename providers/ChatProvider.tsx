@@ -52,14 +52,17 @@ export const [ChatProvider, useChat] = createContextHook(() => {
   const [isLoading, setIsLoading] = useState(true);
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
+  const [streamingThinking, setStreamingThinking] = useState('');
   const abortControllerRef = useRef<AbortController | null>(null);
   const batchBufferRef = useRef<string>('');
+  const thinkingBufferRef = useRef<string>('');
   const batchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hapticTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastHapticRef = useRef<number>(0);
   const streamingMessageIdRef = useRef<string | null>(null);
   const streamingConversationIdRef = useRef<string | null>(null);
   const realtimeChannelRef = useRef<RealtimeChannel | null>(null);
+  const pendingMessageIdsRef = useRef<Set<string>>(new Set());
 
   const triggerStreamingHaptic = useCallback(() => {
     if (Platform.OS === 'web') return;
@@ -149,12 +152,18 @@ export const [ChatProvider, useChat] = createContextHook(() => {
         },
         (payload) => {
           console.log('[ChatProvider] Message change:', payload.eventType);
-          // Update messages in real-time
           if (payload.eventType === 'INSERT') {
             const newMsg = payload.new as any;
+            if (pendingMessageIdsRef.current.has(newMsg.id)) {
+              console.log('[ChatProvider] Ignoring realtime update for pending message:', newMsg.id);
+              return;
+            }
+            if (streamingMessageIdRef.current === newMsg.id) {
+              console.log('[ChatProvider] Ignoring realtime update for streaming message:', newMsg.id);
+              return;
+            }
             setConversations(prev => prev.map(conv => {
               if (conv.id === newMsg.conversation_id) {
-                // Check if message already exists
                 if (conv.messages.some(m => m.id === newMsg.id)) {
                   return conv;
                 }
@@ -378,6 +387,9 @@ export const [ChatProvider, useChat] = createContextHook(() => {
       isStreaming: true,
     };
 
+    pendingMessageIdsRef.current.add(userMessage.id);
+    pendingMessageIdsRef.current.add(assistantMessage.id);
+
     // Optimistic update
     setConversations(prev => prev.map(conv => {
       if (conv.id === conversationId) {
@@ -408,6 +420,21 @@ export const [ChatProvider, useChat] = createContextHook(() => {
           .single();
 
         if (userMsgError) throw userMsgError;
+
+        pendingMessageIdsRef.current.delete(userMessage.id);
+        pendingMessageIdsRef.current.add(userMsgData.id);
+
+        setConversations(prev => prev.map(conv => {
+          if (conv.id === conversationId) {
+            return {
+              ...conv,
+              messages: conv.messages.map(msg =>
+                msg.id === userMessage.id ? { ...msg, id: userMsgData.id } : msg
+              ),
+            };
+          }
+          return conv;
+        }));
         userMessage.id = userMsgData.id;
 
         // Update conversation title if first message
@@ -434,6 +461,21 @@ export const [ChatProvider, useChat] = createContextHook(() => {
           .single();
 
         if (assistantMsgError) throw assistantMsgError;
+
+        pendingMessageIdsRef.current.delete(assistantMessage.id);
+        pendingMessageIdsRef.current.add(assistantMsgData.id);
+
+        setConversations(prev => prev.map(conv => {
+          if (conv.id === conversationId) {
+            return {
+              ...conv,
+              messages: conv.messages.map(msg =>
+                msg.id === assistantMessage.id ? { ...msg, id: assistantMsgData.id } : msg
+              ),
+            };
+          }
+          return conv;
+        }));
         assistantMessage.id = assistantMsgData.id;
         streamingMessageIdRef.current = assistantMsgData.id;
         streamingConversationIdRef.current = conversationId;
@@ -444,6 +486,7 @@ export const [ChatProvider, useChat] = createContextHook(() => {
 
     setIsStreaming(true);
     setStreamingContent('');
+    setStreamingThinking('');
 
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
@@ -470,25 +513,37 @@ export const [ChatProvider, useChat] = createContextHook(() => {
     });
 
     let fullResponse = '';
+    let fullThinking = '';
     batchBufferRef.current = '';
+    thinkingBufferRef.current = '';
+    let rafId: number | null = null;
 
     const flushBatch = () => {
-      if (batchBufferRef.current) {
-        const currentContent = batchBufferRef.current;
+      const currentContent = batchBufferRef.current;
+      const currentThinking = thinkingBufferRef.current;
+      if (currentContent || currentThinking) {
         setStreamingContent(currentContent);
+        setStreamingThinking(currentThinking);
         setConversations(prev => prev.map(conv => {
           if (conv.id === conversationId) {
             return {
               ...conv,
               messages: conv.messages.map(msg =>
                 msg.id === assistantMessage.id
-                  ? { ...msg, content: currentContent }
+                  ? { ...msg, content: currentContent, thinking: currentThinking || undefined }
                   : msg
               ),
             };
           }
           return conv;
         }));
+      }
+      rafId = null;
+    };
+
+    const scheduleFlush = () => {
+      if (!rafId) {
+        rafId = requestAnimationFrame(flushBatch);
       }
     };
 
@@ -498,31 +553,30 @@ export const [ChatProvider, useChat] = createContextHook(() => {
           fullResponse += token;
           batchBufferRef.current = fullResponse;
           triggerStreamingHaptic();
-
-          if (!batchTimeoutRef.current) {
-            batchTimeoutRef.current = setTimeout(() => {
-              flushBatch();
-              batchTimeoutRef.current = null;
-            }, BATCH_INTERVAL_MS);
-          }
+          scheduleFlush();
         },
-        onComplete: async (text) => {
-          if (batchTimeoutRef.current) {
-            clearTimeout(batchTimeoutRef.current);
-            batchTimeoutRef.current = null;
+        onThinking: (token) => {
+          fullThinking += token;
+          thinkingBufferRef.current = fullThinking;
+          scheduleFlush();
+        },
+        onComplete: async (text, thinking) => {
+          if (rafId) {
+            cancelAnimationFrame(rafId);
+            rafId = null;
           }
+          flushBatch();
 
-          console.log('[ChatProvider] Stream completed, length:', text.length);
+          console.log('[ChatProvider] Stream completed, length:', text.length, 'thinking:', thinking?.length || 0);
           abortControllerRef.current = null;
 
-          // Update local state
           setConversations(prev => prev.map(conv => {
             if (conv.id === conversationId) {
               return {
                 ...conv,
                 messages: conv.messages.map(msg =>
                   msg.id === assistantMessage.id
-                    ? { ...msg, content: text, isStreaming: false }
+                    ? { ...msg, content: text, thinking: thinking || undefined, isStreaming: false }
                     : msg
                 ),
                 updatedAt: Date.now(),
@@ -531,7 +585,6 @@ export const [ChatProvider, useChat] = createContextHook(() => {
             return conv;
           }));
 
-          // Update in Supabase
           if (isAuthenticated && streamingMessageIdRef.current) {
             try {
               await supabase
@@ -548,13 +601,15 @@ export const [ChatProvider, useChat] = createContextHook(() => {
             }
           }
 
+          pendingMessageIdsRef.current.delete(userMessage.id);
+          pendingMessageIdsRef.current.delete(assistantMessage.id);
           streamingMessageIdRef.current = null;
           streamingConversationIdRef.current = null;
         },
         onError: (error) => {
-          if (batchTimeoutRef.current) {
-            clearTimeout(batchTimeoutRef.current);
-            batchTimeoutRef.current = null;
+          if (rafId) {
+            cancelAnimationFrame(rafId);
+            rafId = null;
           }
 
           const isAbortError = error.name === 'AbortError' ||
@@ -563,6 +618,29 @@ export const [ChatProvider, useChat] = createContextHook(() => {
 
           if (isAbortError) {
             console.log('[ChatProvider] Stream aborted by user');
+            // Clean up the assistant message if nothing was streamed
+            setConversations(prev => prev.map(conv => {
+              if (conv.id === conversationId) {
+                const currentContent = batchBufferRef.current;
+                return {
+                  ...conv,
+                  messages: conv.messages.map(msg => {
+                    if (msg.id === assistantMessage.id) {
+                      // If we have some content, keep it; otherwise remove the message
+                      if (currentContent) {
+                        return { ...msg, isStreaming: false };
+                      }
+                      return null; // Mark for removal
+                    }
+                    return msg;
+                  }).filter((msg): msg is Message => msg !== null),
+                };
+              }
+              return conv;
+            }));
+            pendingMessageIdsRef.current.delete(assistantMessage.id);
+            streamingMessageIdRef.current = null;
+            streamingConversationIdRef.current = null;
             return;
           }
 
@@ -583,6 +661,8 @@ export const [ChatProvider, useChat] = createContextHook(() => {
             return conv;
           }));
 
+          pendingMessageIdsRef.current.delete(userMessage.id);
+          pendingMessageIdsRef.current.delete(assistantMessage.id);
           streamingMessageIdRef.current = null;
           streamingConversationIdRef.current = null;
         },
@@ -593,6 +673,7 @@ export const [ChatProvider, useChat] = createContextHook(() => {
     } finally {
       setIsStreaming(false);
       setStreamingContent('');
+      setStreamingThinking('');
       abortControllerRef.current = null;
     }
   }, [activeConversationId, conversations, selectedModel, createConversation, triggerStreamingHaptic, isAuthenticated, user?.id]);
@@ -634,6 +715,7 @@ export const [ChatProvider, useChat] = createContextHook(() => {
 
     setIsStreaming(false);
     setStreamingContent('');
+    setStreamingThinking('');
     streamingMessageIdRef.current = null;
     streamingConversationIdRef.current = null;
     console.log('[ChatProvider] Streaming stopped by user');
@@ -678,6 +760,7 @@ export const [ChatProvider, useChat] = createContextHook(() => {
     isLoading,
     isStreaming,
     streamingContent,
+    streamingThinking,
     createConversation,
     deleteConversation,
     clearAllConversations,

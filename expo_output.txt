@@ -1,0 +1,28 @@
+env: load .env.local .env
+env: export CONVEX_DEPLOYMENT EXPO_PUBLIC_CONVEX_URL EXPO_PUBLIC_PROJECT_ID EXPO_PUBLIC_SESSION_TOKEN
+Starting project at /vibe0
+Starting Metro Bundler
+Tunnel connected.
+Tunnel ready.
+[metro-file-map] Cache write error
+: Error: EACCES: permission denied, open '/tmp/metro-file-map-299bcc581e9c8dfb0e9fbc697c50e093-787e21b910323ccc82bab0d16d5ce9f4'
+    at open (node:internal/fs/promises:639:25)
+    at Object.writeFile (node:internal/fs/promises:1216:14)
+    at /vibe0/node_modules/metro-file-map/src/cache/DiskCacheManager.js:80:11
+    at DiskCacheManager.write (/vibe0/node_modules/metro-file-map/src/cache/DiskCacheManager.js:106:7)
+    at FileMap._takeSnapshotAndPersist (/vibe0/node_modules/metro-file-map/src/index.js:459:5)
+    at /vibe0/node_modules/metro-file-map/src/index.js:255:9
+    at DependencyGraph.ready (/vibe0/node_modules/metro/src/node-haste/DependencyGraph.js:88:5)
+    at Bundler.ready (/vibe0/node_modules/metro/src/Bundler.js:62:5)
+    at IncrementalBundler.ready (/vibe0/node_modules/metro/src/IncrementalBundler.js:302:5)
+    at Server.ready (/vibe0/node_modules/metro/src/Server.js:1305:5) {
+  errno: -13,
+  code: 'EACCES',
+  syscall: 'open',
+  path: '/tmp/metro-file-map-299bcc581e9c8dfb0e9fbc697c50e093-787e21b910323ccc82bab0d16d5ce9f4'
+}
+The following packages should be updated for best compatibility with the installed expo version:
+  react-native@0.81.4 - expected version: 0.81.5
+Your project may not work correctly until you install the expected versions of the packages.
+Waiting on http://localhost:8083
+Logs for your project will appear below.

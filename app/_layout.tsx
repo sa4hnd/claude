@@ -5,6 +5,10 @@ import { AuthProvider, useAuth } from "@/providers/AuthProvider";
 import { ChatProvider } from "@/providers/ChatProvider";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import AuthScreen from "@/components/AuthScreen";
+import * as SplashScreen from 'expo-splash-screen';
+import { useEffect, useCallback } from 'react';
+
+SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -17,6 +21,16 @@ const queryClient = new QueryClient({
 
 function RootLayoutNav() {
   const { isAuthenticated, isLoading } = useAuth();
+
+  const onLayoutRootView = useCallback(async () => {
+    if (!isLoading) {
+      await SplashScreen.hideAsync();
+    }
+  }, [isLoading]);
+
+  useEffect(() => {
+    onLayoutRootView();
+  }, [onLayoutRootView]);
 
   if (isLoading) {
     return (

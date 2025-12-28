@@ -8,7 +8,18 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
-const logFile = path.join(process.cwd(), 'expo_logs.txt');
+// Use /tmp if project directory isn't writable
+const projectLogFile = path.join(process.cwd(), 'expo_logs.txt');
+const tmpLogFile = '/tmp/expo_logs.txt';
+let logFile;
+try {
+  fs.accessSync(path.dirname(projectLogFile), fs.constants.W_OK);
+  // Test if we can write to the file
+  fs.writeFileSync(projectLogFile, '', { flag: 'a' });
+  logFile = projectLogFile;
+} catch {
+  logFile = tmpLogFile;
+}
 const args = process.argv.slice(2);
 
 // Create/clear log file with timestamp header

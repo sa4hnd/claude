@@ -19,23 +19,28 @@ export interface Model {
   provider: ModelProvider;
   supportsImages: boolean;
   contextWindow: number;
+  supportsReasoning?: boolean;
 }
 
 export const AVAILABLE_MODELS: Model[] = [
-  // OpenAI - GPT-4o first
+  { id: 'gpt-5.2', name: 'GPT-5.2', provider: 'openai', supportsImages: true, contextWindow: 128000, supportsReasoning: true },
+  { id: 'gpt-5.1', name: 'GPT-5.1', provider: 'openai', supportsImages: true, contextWindow: 128000, supportsReasoning: true },
   { id: 'gpt-4o', name: 'GPT-4o', provider: 'openai', supportsImages: true, contextWindow: 128000 },
-  // Anthropic - Claude Sonnet 4 second
+  { id: 'claude-sonnet-4-5-20250929', name: 'Claude Sonnet 4.5', provider: 'anthropic', supportsImages: true, contextWindow: 200000, supportsReasoning: true },
+  { id: 'claude-opus-4-5-20251101', name: 'Claude Opus 4.5', provider: 'anthropic', supportsImages: true, contextWindow: 200000, supportsReasoning: true },
+  { id: 'claude-haiku-4-5-20251001', name: 'Claude Haiku 4.5', provider: 'anthropic', supportsImages: true, contextWindow: 200000, supportsReasoning: true },
   { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4', provider: 'anthropic', supportsImages: true, contextWindow: 200000 },
-  // Anthropic - Claude Opus 4
   { id: 'claude-opus-4-20250514', name: 'Claude Opus 4', provider: 'anthropic', supportsImages: true, contextWindow: 200000 },
-  // OpenAI - Other models
   { id: 'gpt-4o-mini', name: 'GPT-4o Mini', provider: 'openai', supportsImages: true, contextWindow: 128000 },
-  { id: 'o1', name: 'o1', provider: 'openai', supportsImages: true, contextWindow: 200000 },
-  { id: 'o1-mini', name: 'o1 Mini', provider: 'openai', supportsImages: true, contextWindow: 128000 },
-  // Anthropic - Claude Haiku 3.5
-  { id: 'claude-3-5-haiku-20241022', name: 'Claude Haiku 3.5', provider: 'anthropic', supportsImages: true, contextWindow: 200000 },
-  // xAI - Grok models
-  { id: 'grok-2-latest', name: 'Grok 2', provider: 'xai', supportsImages: false, contextWindow: 131072 },
+  { id: 'o1', name: 'o1', provider: 'openai', supportsImages: true, contextWindow: 200000, supportsReasoning: true },
+  { id: 'o1-mini', name: 'o1 Mini', provider: 'openai', supportsImages: true, contextWindow: 128000, supportsReasoning: true },
+  { id: 'grok-3', name: 'Grok 3', provider: 'xai', supportsImages: false, contextWindow: 131072, supportsReasoning: true },
+  { id: 'grok-3-mini', name: 'Grok 3 Mini', provider: 'xai', supportsImages: false, contextWindow: 131072, supportsReasoning: true },
+  { id: 'grok-4', name: 'Grok 4', provider: 'xai', supportsImages: false, contextWindow: 131072, supportsReasoning: true },
+  { id: 'grok-4.1-fast', name: 'Grok 4.1 Fast', provider: 'xai', supportsImages: false, contextWindow: 131072, supportsReasoning: true },
+  { id: 'grok-3-beta', name: 'Grok 3 Beta', provider: 'xai', supportsImages: false, contextWindow: 131072, supportsReasoning: true },
+  { id: 'grok-3-mini-beta', name: 'Grok 3 Mini Beta', provider: 'xai', supportsImages: false, contextWindow: 131072, supportsReasoning: true },
+  { id: 'grok-2-vision-1212', name: 'Grok 2 Vision', provider: 'xai', supportsImages: true, contextWindow: 131072 },
 ];
 
 export interface MessageContent {
@@ -51,23 +56,115 @@ export interface ChatMessage {
 
 export interface StreamCallbacks {
   onToken: (token: string) => void;
-  onComplete: (fullText: string) => void;
+  onThinking?: (token: string) => void;
+  onComplete: (fullText: string, thinking?: string) => void;
   onError: (error: Error) => void;
   signal?: AbortSignal;
 }
 
-function parseSSELine(line: string): string | null {
+// Parser state for extracting <thinking> tags from streamed content
+interface ThinkingParserState {
+  inThinking: boolean;
+  buffer: string;
+  thinkingBuffer: string;
+}
+
+function createThinkingParser(): {
+  state: ThinkingParserState;
+  parse: (chunk: string) => { content: string; thinking: string };
+} {
+  const state: ThinkingParserState = {
+    inThinking: false,
+    buffer: '',
+    thinkingBuffer: '',
+  };
+
+  return {
+    state,
+    parse: (chunk: string) => {
+      let content = '';
+      let thinking = '';
+
+      state.buffer += chunk;
+
+      while (state.buffer.length > 0) {
+        if (state.inThinking) {
+          // Look for closing tag
+          const closeIdx = state.buffer.indexOf('</thinking>');
+          if (closeIdx !== -1) {
+            // Found closing tag
+            thinking += state.buffer.substring(0, closeIdx);
+            state.buffer = state.buffer.substring(closeIdx + 11); // 11 = '</thinking>'.length
+            state.inThinking = false;
+          } else {
+            // No closing tag yet - check if we might have partial tag
+            const partialClose = state.buffer.match(/<\/t(?:h(?:i(?:n(?:k(?:i(?:n(?:g)?)?)?)?)?)?)?$/);
+            if (partialClose) {
+              // Keep potential partial tag in buffer
+              thinking += state.buffer.substring(0, partialClose.index);
+              state.buffer = state.buffer.substring(partialClose.index!);
+              break;
+            } else {
+              // No partial tag, consume all as thinking
+              thinking += state.buffer;
+              state.buffer = '';
+            }
+          }
+        } else {
+          // Look for opening tag
+          const openIdx = state.buffer.indexOf('<thinking>');
+          if (openIdx !== -1) {
+            // Found opening tag - output content before it
+            content += state.buffer.substring(0, openIdx);
+            state.buffer = state.buffer.substring(openIdx + 10); // 10 = '<thinking>'.length
+            state.inThinking = true;
+          } else {
+            // No opening tag - check for partial tag
+            const partialOpen = state.buffer.match(/<(?:t(?:h(?:i(?:n(?:k(?:i(?:n(?:g)?)?)?)?)?)?)?)?$/);
+            if (partialOpen) {
+              // Keep potential partial tag in buffer
+              content += state.buffer.substring(0, partialOpen.index);
+              state.buffer = state.buffer.substring(partialOpen.index!);
+              break;
+            } else {
+              // No partial tag, consume all as content
+              content += state.buffer;
+              state.buffer = '';
+            }
+          }
+        }
+      }
+
+      return { content, thinking };
+    },
+  };
+}
+
+interface ParsedSSE {
+  content?: string;
+  thinking?: string;
+}
+
+function parseSSELine(line: string): ParsedSSE | null {
   if (line.startsWith('data: ')) {
     const data = line.slice(6);
     if (data === '[DONE]') return null;
     try {
       const parsed = JSON.parse(data);
+      const result: ParsedSSE = {};
       if (parsed.choices?.[0]?.delta?.content) {
-        return parsed.choices[0].delta.content;
+        result.content = parsed.choices[0].delta.content;
+      }
+      if (parsed.choices?.[0]?.delta?.reasoning_content) {
+        result.thinking = parsed.choices[0].delta.reasoning_content;
       }
       if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
-        return parsed.delta.text;
+        result.content = parsed.delta.text;
       }
+      if (parsed.type === 'content_block_delta' && parsed.delta?.thinking) {
+        result.thinking = parsed.delta.thinking;
+      }
+      if (result.content || result.thinking) return result;
     } catch {
       return null;
     }
@@ -115,7 +212,11 @@ async function streamOpenAIStyle(
 
   const decoder = new TextDecoder();
   let fullText = '';
+  let fullThinking = '';
   let buffer = '';
+
+  // Create thinking parser for <thinking> tags in content
+  const thinkingParser = createThinkingParser();
 
   try {
     while (true) {
@@ -127,24 +228,53 @@ async function streamOpenAIStyle(
       buffer = lines.pop() || '';
 
       for (const line of lines) {
-        const token = parseSSELine(line.trim());
-        if (token) {
-          fullText += token;
-          callbacks.onToken(token);
+        const parsed = parseSSELine(line.trim());
+        if (parsed) {
+          // First check for native thinking support (reasoning_content)
+          if (parsed.thinking && callbacks.onThinking) {
+            fullThinking += parsed.thinking;
+            callbacks.onThinking(parsed.thinking);
+          }
+
+          // Parse content for <thinking> tags
+          if (parsed.content) {
+            const { content, thinking } = thinkingParser.parse(parsed.content);
+            if (content) {
+              fullText += content;
+              callbacks.onToken(content);
+            }
+            if (thinking && callbacks.onThinking) {
+              fullThinking += thinking;
+              callbacks.onThinking(thinking);
+            }
+          }
         }
       }
     }
 
     if (buffer.trim()) {
-      const token = parseSSELine(buffer.trim());
-      if (token) {
-        fullText += token;
-        callbacks.onToken(token);
+      const parsed = parseSSELine(buffer.trim());
+      if (parsed) {
+        if (parsed.thinking && callbacks.onThinking) {
+          fullThinking += parsed.thinking;
+          callbacks.onThinking(parsed.thinking);
+        }
+        if (parsed.content) {
+          const { content, thinking } = thinkingParser.parse(parsed.content);
+          if (content) {
+            fullText += content;
+            callbacks.onToken(content);
+          }
+          if (thinking && callbacks.onThinking) {
+            fullThinking += thinking;
+            callbacks.onThinking(thinking);
+          }
+        }
       }
     }
 
-    callbacks.onComplete(fullText);
-    console.log('[Streaming] Stream completed, total length:', fullText.length);
+    callbacks.onComplete(fullText, fullThinking || undefined);
+    console.log('[Streaming] Stream completed, total length:', fullText.length, 'thinking:', fullThinking.length);
   } catch (error) {
     console.error('[Streaming] Stream error:', error);
     throw error;
@@ -191,8 +321,29 @@ async function streamAnthropic(
   const systemMessage = messages.find(m => m.role === 'system');
   const systemText = typeof systemMessage?.content === 'string' ? systemMessage.content : undefined;
 
+  // Check if model supports extended thinking
+  const modelInfo = AVAILABLE_MODELS.find(m => m.id === model);
+  const supportsThinking = modelInfo?.supportsReasoning ?? false;
+
   console.log('[Streaming] Anthropic endpoint:', `${BASE_URL}/v1/messages`);
   console.log('[Streaming] Anthropic request model:', model);
+  console.log('[Streaming] Extended thinking enabled:', supportsThinking);
+
+  const requestBody: Record<string, unknown> = {
+    model,
+    messages: anthropicMessages,
+    max_tokens: 64000,
+    stream: true,
+    ...(systemText && { system: systemText }),
+  };
+
+  // Enable extended thinking for models that support it
+  if (supportsThinking) {
+    requestBody.thinking = {
+      type: 'enabled',
+      budget_tokens: 16000,
+    };
+  }
 
   const response = await streamingFetch(`${BASE_URL}/v1/messages`, {
     method: 'POST',
@@ -201,13 +352,7 @@ async function streamAnthropic(
       'x-api-key': API_KEYS.anthropic,
       'anthropic-version': '2023-06-01',
     },
-    body: JSON.stringify({
-      model,
-      messages: anthropicMessages,
-      max_tokens: 4096,
-      stream: true,
-      ...(systemText && { system: systemText }),
-    }),
+    body: JSON.stringify(requestBody),
     signal: callbacks.signal,
   });
 
@@ -226,6 +371,7 @@ async function streamAnthropic(
 
   const decoder = new TextDecoder();
   let fullText = '';
+  let fullThinking = '';
   let buffer = '';
 
   try {
@@ -242,9 +388,18 @@ async function streamAnthropic(
           const data = line.slice(6);
           try {
             const parsed = JSON.parse(data);
-            if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
-              fullText += parsed.delta.text;
-              callbacks.onToken(parsed.delta.text);
+            // Handle content_block_delta events
+            if (parsed.type === 'content_block_delta') {
+              // Check delta type for proper extended thinking support
+              if (parsed.delta?.type === 'thinking_delta' && parsed.delta?.thinking && callbacks.onThinking) {
+                // Native extended thinking - thinking_delta type
+                fullThinking += parsed.delta.thinking;
+                callbacks.onThinking(parsed.delta.thinking);
+              } else if (parsed.delta?.type === 'text_delta' && parsed.delta?.text) {
+                // Regular text content - text_delta type
+                fullText += parsed.delta.text;
+                callbacks.onToken(parsed.delta.text);
+              }
             }
           } catch {
             continue;
@@ -253,7 +408,7 @@ async function streamAnthropic(
       }
     }
 
-    callbacks.onComplete(fullText);
+    callbacks.onComplete(fullText, fullThinking || undefined);
     console.log('[Streaming] Anthropic stream completed');
   } catch (error) {
     console.error('[Streaming] Anthropic stream error:', error);
@@ -275,14 +430,14 @@ export async function streamChat(
       await streamOpenAIStyle(
         `${BASE_URL}/v1/chat/completions`,
         { Authorization: `Bearer ${API_KEYS.openai}` },
-        { model: model.id, messages, max_tokens: 4096 },
+        { model: model.id, messages, max_completion_tokens: 64000 },
         callbacks
       );
     } else if (model.provider === 'xai') {
       await streamOpenAIStyle(
         `${BASE_URL}/v1/chat/completions`,
         { Authorization: `Bearer ${API_KEYS.xai}` },
-        { model: model.id, messages, max_tokens: 4096 },
+        { model: model.id, messages, max_completion_tokens: 64000 },
         callbacks
       );
     }
@@ -319,7 +474,7 @@ export async function sendChatNonStreaming(
       body: JSON.stringify({
         model: model.id,
         messages: anthropicMessages,
-        max_tokens: 4096,
+        max_tokens: 64000,
         ...(systemText && { system: systemText }),
       }),
     });
@@ -345,7 +500,7 @@ export async function sendChatNonStreaming(
     body: JSON.stringify({
       model: model.id,
       messages,
-      max_tokens: 4096,
+      max_completion_tokens: 64000,
     }),
   });
 

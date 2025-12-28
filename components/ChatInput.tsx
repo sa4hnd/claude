@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   TouchableWithoutFeedback,
   FlatList,
-  KeyboardAvoidingView,
   Platform,
   StyleSheet,
   ActivityIndicator,
@@ -25,6 +24,7 @@ import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import * as Haptics from 'expo-haptics';
 import { Audio } from 'expo-av';
+import { useMarkdown, type MarkedStyles, type useMarkdownHookOptions } from 'react-native-marked';
 import {
   Plus,
   X,
@@ -34,6 +34,11 @@ import {
   Camera,
   FileText,
   ArrowUp,
+  ChevronDown,
+  ChevronUp,
+  Brain,
+  Copy,
+  RefreshCw,
 } from 'lucide-react-native';
 import { useChat } from '@/providers/ChatProvider';
 import { ImageAttachment, Message } from '@/lib/types/chat';
@@ -103,208 +108,121 @@ const SpinningClaudeLogo = React.memo<{ size?: number }>(({ size = 24 }) => {
 });
 SpinningClaudeLogo.displayName = 'SpinningClaudeLogo';
 
-// Simple markdown renderer
-interface SimpleMarkdownProps {
-  children: string;
-  isUser?: boolean;
-}
-
-const SimpleMarkdown = React.memo<SimpleMarkdownProps>(({ children, isUser = false }) => {
-  const textColor = isUser ? colors.userBubbleText : colors.assistantBubbleText;
-  const codeBackgroundColor = isUser ? 'rgba(255,255,255,0.1)' : colors.surface;
-  const codeTextColor = isUser ? colors.userBubbleText : colors.accent;
-
-  const parseMarkdown = (text: string): React.ReactNode[] => {
-    if (!text) return [];
-
-    const lines = text.split('\n');
-    const elements: React.ReactNode[] = [];
-    let key = 0;
-    let inCodeBlock = false;
-    let codeBlockContent: string[] = [];
-    let codeBlockLang = '';
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-
-      if (line.startsWith('```')) {
-        if (!inCodeBlock) {
-          inCodeBlock = true;
-          codeBlockLang = line.slice(3).trim();
-          codeBlockContent = [];
-        } else {
-          elements.push(
-            <View key={key++} style={mdStyles.codeBlock}>
-              {codeBlockLang && (
-                <Text style={mdStyles.codeBlockLang}>{codeBlockLang}</Text>
-              )}
-              <Text style={[mdStyles.codeBlockText, { color: isUser ? colors.userBubbleText : colors.text }]}>
-                {codeBlockContent.join('\n')}
-              </Text>
-            </View>
-          );
-          inCodeBlock = false;
-          codeBlockContent = [];
-          codeBlockLang = '';
-        }
-        continue;
-      }
-
-      if (inCodeBlock) {
-        codeBlockContent.push(line);
-        continue;
-      }
-
-      if (line.trim() === '') {
-        elements.push(<View key={key++} style={{ height: 8 }} />);
-        continue;
-      }
-
-      const headerMatch = line.match(/^(#{1,6})\s+(.+)$/);
-      if (headerMatch) {
-        const level = headerMatch[1].length;
-        const headerText = headerMatch[2];
-        const headerStyle = level === 1 ? mdStyles.h1 : level === 2 ? mdStyles.h2 : mdStyles.h3;
-        elements.push(
-          <Text key={key++} style={[headerStyle, { color: textColor }]}>
-            {parseInline(headerText, textColor, codeBackgroundColor, codeTextColor)}
-          </Text>
-        );
-        continue;
-      }
-
-      if (line.match(/^[\s]*[-*+]\s+/)) {
-        const listText = line.replace(/^[\s]*[-*+]\s+/, '');
-        elements.push(
-          <View key={key++} style={mdStyles.listItem}>
-            <Text style={[mdStyles.bullet, { color: textColor }]}>•</Text>
-            <Text style={[mdStyles.listText, { color: textColor }]}>
-              {parseInline(listText, textColor, codeBackgroundColor, codeTextColor)}
-            </Text>
-          </View>
-        );
-        continue;
-      }
-
-      const orderedMatch = line.match(/^[\s]*(\d+)\.\s+(.+)$/);
-      if (orderedMatch) {
-        elements.push(
-          <View key={key++} style={mdStyles.listItem}>
-            <Text style={[mdStyles.orderNum, { color: textColor }]}>{orderedMatch[1]}.</Text>
-            <Text style={[mdStyles.listText, { color: textColor }]}>
-              {parseInline(orderedMatch[2], textColor, codeBackgroundColor, codeTextColor)}
-            </Text>
-          </View>
-        );
-        continue;
-      }
-
-      elements.push(
-        <Text key={key++} style={[mdStyles.paragraph, { color: textColor }]}>
-          {parseInline(line, textColor, codeBackgroundColor, codeTextColor)}
-        </Text>
-      );
-    }
-
-    if (inCodeBlock && codeBlockContent.length > 0) {
-      elements.push(
-        <View key={key++} style={mdStyles.codeBlock}>
-          <Text style={[mdStyles.codeBlockText, { color: isUser ? colors.userBubbleText : colors.text }]}>
-            {codeBlockContent.join('\n')}
-          </Text>
-        </View>
-      );
-    }
-
-    return elements;
-  };
-
-  const parseInline = (
-    text: string,
-    textColor: string,
-    codeBackgroundColor: string,
-    codeTextColor: string
-  ): React.ReactNode[] => {
-    const elements: React.ReactNode[] = [];
-    let remaining = text;
-    let key = 0;
-
-    while (remaining.length > 0) {
-      const codeMatch = remaining.match(/^`([^`]+)`/);
-      if (codeMatch) {
-        elements.push(
-          <Text key={key++} style={[mdStyles.inlineCode, { backgroundColor: codeBackgroundColor, color: codeTextColor }]}>
-            {codeMatch[1]}
-          </Text>
-        );
-        remaining = remaining.slice(codeMatch[0].length);
-        continue;
-      }
-
-      const boldMatch = remaining.match(/^\*\*(.+?)\*\*/);
-      if (boldMatch) {
-        elements.push(<Text key={key++} style={mdStyles.bold}>{boldMatch[1]}</Text>);
-        remaining = remaining.slice(boldMatch[0].length);
-        continue;
-      }
-
-      const italicMatch = remaining.match(/^\*(.+?)\*/);
-      if (italicMatch) {
-        elements.push(<Text key={key++} style={mdStyles.italic}>{italicMatch[1]}</Text>);
-        remaining = remaining.slice(italicMatch[0].length);
-        continue;
-      }
-
-      const linkMatch = remaining.match(/^\[([^\]]+)\]\(([^)]+)\)/);
-      if (linkMatch) {
-        elements.push(
-          <Text key={key++} style={mdStyles.link} onPress={() => Linking.openURL(linkMatch[2])}>
-            {linkMatch[1]}
-          </Text>
-        );
-        remaining = remaining.slice(linkMatch[0].length);
-        continue;
-      }
-
-      const nextSpecial = remaining.search(/[`*\[]/);
-      if (nextSpecial === -1) {
-        elements.push(<Text key={key++}>{remaining}</Text>);
-        break;
-      } else if (nextSpecial === 0) {
-        elements.push(<Text key={key++}>{remaining[0]}</Text>);
-        remaining = remaining.slice(1);
-      } else {
-        elements.push(<Text key={key++}>{remaining.slice(0, nextSpecial)}</Text>);
-        remaining = remaining.slice(nextSpecial);
-      }
-    }
-
-    return elements;
-  };
-
-  return <View style={mdStyles.container}>{parseMarkdown(children)}</View>;
+// Markdown styles for react-native-marked
+const getMarkdownStyles = (isUser: boolean): MarkedStyles => ({
+  text: {
+    color: isUser ? colors.userBubbleText : colors.assistantBubbleText,
+    fontSize: 16,
+    lineHeight: 24,
+  },
+  h1: {
+    color: isUser ? colors.userBubbleText : colors.assistantBubbleText,
+    fontSize: 24,
+    fontWeight: '600',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  h2: {
+    color: isUser ? colors.userBubbleText : colors.assistantBubbleText,
+    fontSize: 20,
+    fontWeight: '600',
+    marginTop: 14,
+    marginBottom: 6,
+  },
+  h3: {
+    color: isUser ? colors.userBubbleText : colors.assistantBubbleText,
+    fontSize: 18,
+    fontWeight: '600',
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  paragraph: {
+    marginTop: 0,
+    marginBottom: 8,
+  },
+  codespan: {
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontSize: 14,
+    backgroundColor: isUser ? 'rgba(255,255,255,0.15)' : colors.surface,
+    color: isUser ? colors.userBubbleText : colors.accent,
+  },
+  code: {
+    backgroundColor: isUser ? 'rgba(255,255,255,0.1)' : colors.surface,
+    padding: 12,
+    borderRadius: 8,
+    marginVertical: 8,
+  },
+  strong: {
+    fontWeight: '600',
+  },
+  em: {
+    fontStyle: 'italic',
+  },
+  link: {
+    color: colors.accent,
+    textDecorationLine: 'underline',
+  },
+  list: {
+    marginVertical: 4,
+  },
+  li: {
+    color: isUser ? colors.userBubbleText : colors.assistantBubbleText,
+    marginBottom: 4,
+  },
+  blockquote: {
+    backgroundColor: isUser ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.03)',
+    borderLeftWidth: 3,
+    borderLeftColor: colors.accent,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginVertical: 8,
+  },
+  hr: {
+    backgroundColor: colors.border,
+    height: 1,
+    marginVertical: 12,
+  },
+  table: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 4,
+    marginVertical: 8,
+  },
+  tableRow: {
+    borderBottomWidth: 1,
+    borderColor: colors.border,
+  },
+  tableCell: {
+    padding: 8,
+  },
 });
 
-SimpleMarkdown.displayName = 'SimpleMarkdown';
-
-const mdStyles = StyleSheet.create({
-  container: { flexShrink: 1 },
-  paragraph: { fontSize: 16, lineHeight: 26, marginBottom: 4 },
-  h1: { fontSize: 24, fontWeight: '600', marginTop: 16, marginBottom: 8 },
-  h2: { fontSize: 20, fontWeight: '600', marginTop: 14, marginBottom: 6 },
-  h3: { fontSize: 18, fontWeight: '600', marginTop: 12, marginBottom: 4 },
-  codeBlock: { backgroundColor: colors.surface, padding: 12, borderRadius: 8, marginVertical: 8 },
-  codeBlockLang: { fontSize: 11, color: colors.textMuted, marginBottom: 8, textTransform: 'uppercase' },
-  codeBlockText: { fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', fontSize: 13, lineHeight: 20 },
-  inlineCode: { fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', fontSize: 14, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
-  bold: { fontWeight: '600' },
-  italic: { fontStyle: 'italic' },
-  link: { color: colors.accent, textDecorationLine: 'underline' },
-  listItem: { flexDirection: 'row', marginBottom: 4 },
-  bullet: { width: 20, fontSize: 16 },
-  orderNum: { width: 24, fontSize: 16 },
-  listText: { flex: 1, fontSize: 16, lineHeight: 26 },
+const getMarkdownTheme = (isUser: boolean) => ({
+  colors: {
+    code: isUser ? 'rgba(255,255,255,0.1)' : colors.surface,
+    link: colors.accent,
+    text: isUser ? colors.userBubbleText : colors.assistantBubbleText,
+    border: colors.border,
+  },
 });
+
+// Simple markdown text component using useMarkdown hook
+const MarkdownText = React.memo<{ content: string; isUser: boolean }>(({ content, isUser }) => {
+  const elements = useMarkdown(content, {
+    colorScheme: 'dark',
+    styles: getMarkdownStyles(isUser),
+    theme: getMarkdownTheme(isUser),
+  });
+
+  return (
+    <View>
+      {elements.map((element, index) => (
+        <React.Fragment key={index}>{element}</React.Fragment>
+      ))}
+    </View>
+  );
+});
+MarkdownText.displayName = 'MarkdownText';
 
 // Message Bubble - Claude style
 interface MessageBubbleProps {
@@ -313,80 +231,206 @@ interface MessageBubbleProps {
   onRetry?: (messageId: string) => void;
 }
 
+const CollapsibleThinking = React.memo<{ thinking: string; isStreaming?: boolean }>(({ thinking, isStreaming }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  const toggleExpand = useCallback(() => {
+    triggerHaptic('light');
+    setIsExpanded(prev => !prev);
+  }, []);
+
+  if (!thinking) return null;
+
+  return (
+    <View style={thinkingStyles.container}>
+      <TouchableOpacity
+        style={thinkingStyles.header}
+        onPress={toggleExpand}
+        activeOpacity={0.7}
+      >
+        <Brain size={14} color={colors.textMuted} />
+        <Text style={thinkingStyles.headerText}>
+          {isStreaming ? 'Thinking...' : 'Thought process'}
+        </Text>
+        {isExpanded ? (
+          <ChevronUp size={16} color={colors.textMuted} />
+        ) : (
+          <ChevronDown size={16} color={colors.textMuted} />
+        )}
+      </TouchableOpacity>
+      {isExpanded && (
+        <View style={thinkingStyles.content}>
+          <ThinkingMarkdownText content={thinking} />
+        </View>
+      )}
+    </View>
+  );
+});
+CollapsibleThinking.displayName = 'CollapsibleThinking';
+
+// Thinking markdown styles
+const thinkingMarkdownStyles: MarkedStyles = {
+  text: {
+    color: colors.textMuted,
+    fontSize: 13,
+    lineHeight: 20,
+  },
+  paragraph: {
+    marginTop: 0,
+    marginBottom: 6,
+  },
+  codespan: {
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontSize: 12,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    color: colors.textMuted,
+  },
+  code: {
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    padding: 8,
+    borderRadius: 6,
+    marginVertical: 6,
+  },
+  strong: {
+    fontWeight: '600',
+    color: colors.text,
+  },
+  em: {
+    fontStyle: 'italic',
+  },
+  li: {
+    color: colors.textMuted,
+  },
+};
+
+const thinkingTheme = {
+  colors: {
+    code: 'rgba(255,255,255,0.04)',
+    link: colors.accent,
+    text: colors.textMuted,
+    border: colors.border,
+  },
+};
+
+// Thinking markdown text component
+const ThinkingMarkdownText = React.memo<{ content: string }>(({ content }) => {
+  const elements = useMarkdown(content, {
+    colorScheme: 'dark',
+    styles: thinkingMarkdownStyles,
+    theme: thinkingTheme,
+  });
+
+  return (
+    <View>
+      {elements.map((element, index) => (
+        <React.Fragment key={index}>{element}</React.Fragment>
+      ))}
+    </View>
+  );
+});
+ThinkingMarkdownText.displayName = 'ThinkingMarkdownText';
+
+const thinkingStyles = StyleSheet.create({
+  container: {
+    marginBottom: spacing.sm,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderRadius: borderRadius.md,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    alignSelf: 'flex-start',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  headerText: {
+    fontSize: 12,
+    color: colors.textMuted,
+    fontWeight: '500' as const,
+  },
+  content: {
+    paddingHorizontal: spacing.sm,
+    paddingBottom: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.06)',
+  },
+});
+
 const MessageBubble = React.memo<MessageBubbleProps>(({ message, isLast, onRetry }) => {
   const isUser = message.role === 'user';
   const content = message.content || (message.isStreaming ? '' : '');
 
-  const handleLongPress = useCallback(() => {
-    triggerHaptic('medium');
+  const handleCopy = useCallback(() => {
+    Clipboard.setStringAsync(content);
+    triggerHaptic('light');
+  }, [content]);
 
-    if (Platform.OS === 'ios') {
-      const options = isUser
-        ? ['Copy', 'Cancel']
-        : ['Copy', 'Retry', 'Cancel'];
-      const cancelButtonIndex = isUser ? 1 : 2;
-
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          options,
-          cancelButtonIndex,
-        },
-        (buttonIndex) => {
-          if (buttonIndex === 0) {
-            Clipboard.setStringAsync(content);
-            triggerHaptic('light');
-          } else if (!isUser && buttonIndex === 1 && onRetry) {
-            onRetry(message.id);
-          }
-        }
-      );
-    } else {
-      const buttons = isUser
-        ? [
-            { text: 'Copy', onPress: () => { Clipboard.setStringAsync(content); triggerHaptic('light'); } },
-            { text: 'Cancel', style: 'cancel' as const },
-          ]
-        : [
-            { text: 'Copy', onPress: () => { Clipboard.setStringAsync(content); triggerHaptic('light'); } },
-            { text: 'Retry', onPress: () => onRetry?.(message.id) },
-            { text: 'Cancel', style: 'cancel' as const },
-          ];
-      Alert.alert('Message Options', undefined, buttons);
-    }
-  }, [content, isUser, message.id, onRetry]);
+  const handleRetry = useCallback(() => {
+    onRetry?.(message.id);
+  }, [message.id, onRetry]);
 
   const isStreaming = message.isStreaming && isLast;
 
+  // Check if content has complex markdown
+  const hasComplexMarkdown = /[#*`\[\]|>-]/.test(content);
+
   return (
-    <TouchableOpacity
-      activeOpacity={0.8}
-      onLongPress={handleLongPress}
-      delayLongPress={300}
-    >
-      <View style={[styles.messageContainer, isUser ? styles.userMessageContainer : styles.assistantMessageContainer]}>
-        {message.images && message.images.length > 0 && (
-          <View style={styles.messageImages}>
-            {message.images.map((img) => (
-              <Image key={img.id} source={{ uri: img.uri }} style={styles.messageImage} contentFit="cover" />
-            ))}
-          </View>
-        )}
-        <View style={[styles.bubble, isUser ? styles.userBubble : styles.assistantBubble]}>
-          {content ? (
-            <View style={styles.streamingContent}>
-              <SimpleMarkdown isUser={isUser}>{content}</SimpleMarkdown>
-              {isStreaming && (
-                <View style={styles.inlineSpinner}>
-                  <SpinningClaudeLogo size={18} />
-                </View>
-              )}
-            </View>
-          ) : isStreaming ? (
-            <SpinningClaudeLogo size={24} />
-          ) : null}
+    <View style={[styles.messageContainer, isUser ? styles.userMessageContainer : styles.assistantMessageContainer]}>
+      {message.images && message.images.length > 0 && (
+        <View style={styles.messageImages}>
+          {message.images.map((img) => (
+            <Image key={img.id} source={{ uri: img.uri }} style={styles.messageImage} contentFit="cover" />
+          ))}
         </View>
+      )}
+      <View style={[styles.bubble, isUser ? styles.userBubble : styles.assistantBubble]}>
+        {!isUser && message.thinking && (
+          <CollapsibleThinking thinking={message.thinking} isStreaming={isStreaming && !content} />
+        )}
+        {content ? (
+          <View style={styles.streamingContent}>
+            {hasComplexMarkdown ? (
+              <MarkdownText content={content} isUser={isUser} />
+            ) : (
+              <Text
+                selectable={true}
+                style={{
+                  color: isUser ? colors.userBubbleText : colors.assistantBubbleText,
+                  fontSize: 16,
+                  lineHeight: 24,
+                }}
+              >
+                {content}
+              </Text>
+            )}
+            {isStreaming && (
+              <View style={styles.inlineSpinner}>
+                <SpinningClaudeLogo size={18} />
+              </View>
+            )}
+          </View>
+        ) : isStreaming ? (
+          <SpinningClaudeLogo size={24} />
+        ) : null}
       </View>
-    </TouchableOpacity>
+      {/* Action buttons for non-streaming messages */}
+      {!isStreaming && content && !isUser && (
+        <View style={styles.messageActions}>
+          <TouchableOpacity style={styles.actionButton} onPress={handleCopy}>
+            <Copy size={14} color={colors.textMuted} />
+            <Text style={styles.actionButtonText}>Copy</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.actionButton} onPress={handleRetry}>
+            <RefreshCw size={14} color={colors.textMuted} />
+            <Text style={styles.actionButtonText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+    </View>
   );
 });
 
@@ -557,6 +601,7 @@ export default function ChatInput() {
   const [waveformLevels, setWaveformLevels] = useState<number[]>(Array(NUM_WAVEFORM_BARS).fill(-60));
   const [recordingDuration, setRecordingDuration] = useState(0);
   const [userScrolled, setUserScrolled] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   const inputRef = useRef<TextInput>(null);
   const flatListRef = useRef<FlatList>(null);
@@ -582,11 +627,12 @@ export default function ChatInput() {
   }, []);
 
   const scrollToBottom = useCallback(() => {
-    if (!userScrolled && flatListRef.current && messages.length > 0) {
+    if (flatListRef.current && messages.length > 0) {
       flatListRef.current.scrollToEnd({ animated: false });
     }
-  }, [userScrolled, messages.length]);
+  }, [messages.length]);
 
+  // Scroll when user sends a new message (not when scrolled up)
   useEffect(() => {
     const lastMessage = messages[messages.length - 1];
     if (lastMessage) {
@@ -598,9 +644,48 @@ export default function ChatInput() {
     }
   }, [messages, scrollToBottom, userScrolled]);
 
+  // Always scroll when messages count increases (new message sent)
+  const prevMessagesLengthRef = useRef(messages.length);
   useEffect(() => {
-    if (messages.length > 0 && !userScrolled) setTimeout(scrollToBottom, 100);
-  }, [messages.length, scrollToBottom, userScrolled]);
+    if (messages.length > prevMessagesLengthRef.current) {
+      // New message added - scroll to bottom
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: true });
+        setUserScrolled(false);
+      }, 100);
+    }
+    prevMessagesLengthRef.current = messages.length;
+  }, [messages.length]);
+
+  // Scroll to bottom when keyboard appears and track keyboard height
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+
+    const keyboardWillShowListener = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      (e) => {
+        setKeyboardHeight(e.endCoordinates.height);
+        // Scroll to bottom with a small delay to let the layout adjust
+        setTimeout(() => {
+          if (!userScrolled && flatListRef.current && messages.length > 0) {
+            flatListRef.current.scrollToEnd({ animated: true });
+          }
+        }, 100);
+      }
+    );
+
+    const keyboardWillHideListener = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => {
+        setKeyboardHeight(0);
+      }
+    );
+
+    return () => {
+      keyboardWillShowListener.remove();
+      keyboardWillHideListener.remove();
+    };
+  }, [userScrolled, messages.length]);
 
   const handleSend = useCallback(async () => {
     const trimmedText = inputText.trim();
@@ -615,6 +700,11 @@ export default function ChatInput() {
     Keyboard.dismiss();
 
     await sendMessage(trimmedText, imagesToSend);
+
+    // Force scroll to bottom after sending message
+    setTimeout(() => {
+      flatListRef.current?.scrollToEnd({ animated: true });
+    }, 150);
   }, [inputText, attachedImages, isStreaming, sendMessage]);
 
   const pickImage = useCallback(async (useCamera: boolean) => {
@@ -825,11 +915,7 @@ export default function ChatInput() {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : Platform.OS === 'web' ? undefined : 'height'}
-      keyboardVerticalOffset={0}
-    >
+    <View style={styles.container}>
       {messages.length === 0 ? (
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
           <View style={[styles.emptyState, isWeb && styles.webEmptyState]}>
@@ -894,7 +980,14 @@ export default function ChatInput() {
       {!isRecording && (
         <View style={[
           styles.inputContainer,
-          { paddingBottom: isWeb ? spacing.lg : Math.max(insets.bottom, spacing.md) },
+          {
+            paddingBottom: isWeb
+              ? spacing.lg
+              : keyboardHeight > 0
+                ? spacing.sm
+                : Math.max(insets.bottom, spacing.md),
+            marginBottom: Platform.OS === 'ios' ? keyboardHeight : 0,
+          },
           isWeb && styles.webInputContainer
         ]}>
           <View style={[styles.inputWrapper, isWeb && styles.webInputWrapper]}>
@@ -913,7 +1006,6 @@ export default function ChatInput() {
                 placeholderTextColor={colors.inputPlaceholder}
                 multiline
                 maxLength={10000}
-                editable={!isStreaming}
               />
             )}
             <View style={styles.inputActions}>
@@ -942,7 +1034,7 @@ export default function ChatInput() {
           </View>
         </View>
       )}
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
@@ -983,8 +1075,8 @@ const styles = StyleSheet.create({
     maxWidth: '100%',
   },
   bubble: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     borderRadius: borderRadius.xl,
     ...(Platform.OS === 'web' && {
       wordBreak: 'break-word',
@@ -1031,6 +1123,22 @@ const styles = StyleSheet.create({
   contextMenuText: {
     fontSize: 16,
     color: colors.text,
+  },
+  messageActions: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    marginTop: spacing.xs,
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+  },
+  actionButtonText: {
+    fontSize: 13,
+    color: colors.textMuted,
   },
   messageImages: {
     flexDirection: 'row',

@@ -10,6 +10,7 @@ export interface Message {
   id: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
+  thinking?: string;
   images?: ImageAttachment[];
   createdAt: number;
   isStreaming?: boolean;

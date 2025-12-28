@@ -12,6 +12,64 @@ const API_KEYS = {
 
 const streamingFetch = Platform.OS === 'web' ? fetch : expoFetch;
 
+// Cache for uploaded file IDs (fileUri -> file_id)
+const uploadedFileCache = new Map<string, string>();
+
+// Upload file to OpenAI Files API and return file_id
+async function uploadFileToOpenAI(fileUri: string, filename: string, mimeType: string, base64Data?: string): Promise<string | null> {
+  try {
+    if (uploadedFileCache.has(fileUri)) {
+      console.log('[OpenAI Files] Using cached file_id for:', filename);
+      return uploadedFileCache.get(fileUri)!;
+    }
+
+    console.log('[OpenAI Files] Uploading file:', filename, 'platform:', Platform.OS);
+
+    if (Platform.OS !== 'web') {
+      console.log('[OpenAI Files] PDF upload not supported on native - use Claude for PDF analysis');
+      return null;
+    }
+
+    if (!base64Data) {
+      console.error('[OpenAI Files] No base64 data provided for upload');
+      return null;
+    }
+
+    const binaryString = atob(base64Data);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    const blob = new Blob([bytes], { type: mimeType });
+
+    const formData = new FormData();
+    formData.append('file', blob, filename);
+    formData.append('purpose', 'user_data');
+
+    const response = await fetch(`${BASE_URL}/v1/files`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${API_KEYS.openai}`,
+      },
+      body: formData,
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      console.log('[OpenAI Files] Upload successful, file_id:', data.id);
+      uploadedFileCache.set(fileUri, data.id);
+      return data.id;
+    } else {
+      const errorText = await response.text();
+      console.error('[OpenAI Files] Upload failed:', response.status, errorText);
+      return null;
+    }
+  } catch (error) {
+    console.error('[OpenAI Files] Upload error:', error);
+    return null;
+  }
+}
+
 export type ModelProvider = 'openai' | 'anthropic' | 'xai';
 
 export interface Model {
@@ -48,7 +106,7 @@ export interface MessageContent {
   type: 'text' | 'image_url' | 'document';
   text?: string;
   image_url?: { url: string };
-  document?: { url: string; name?: string; mimeType?: string };
+  document?: { url: string; name?: string; mimeType?: string; fileUri?: string };
 }
 
 export interface ChatMessage {
@@ -290,8 +348,21 @@ async function streamAnthropic(
   webSearchEnabled?: boolean
 ): Promise<void> {
   console.log('[Streaming] Starting Anthropic stream with model:', model);
-  console.log('[Streaming] Anthropic API key prefix:', API_KEYS.anthropic.substring(0, 15) + '...');
   console.log('[Streaming] Messages count:', messages.length);
+
+  // Debug: Log content types in messages
+  messages.forEach((m, i) => {
+    if (typeof m.content !== 'string' && Array.isArray(m.content)) {
+      const types = m.content.map(c => c.type);
+      console.log(`[Streaming] Message ${i} (${m.role}) content types:`, types);
+      m.content.forEach((c, j) => {
+        if (c.type === 'document' && c.document) {
+          console.log(`[Streaming] Message ${i} content ${j}: document name=${c.document.name}, mimeType=${c.document.mimeType}, urlLength=${c.document.url?.length}`);
+        }
+      });
+    }
+  });
+
   if (webSearchEnabled) {
     console.log('[Streaming] Web search tool enabled');
   }
@@ -321,9 +392,11 @@ async function streamAnthropic(
         }
         if (c.type === 'document' && c.document) {
           const url = c.document.url;
-          if (url.startsWith('data:')) {
+          console.log('[Streaming] Processing document:', c.document.name, 'url starts with data:', url?.startsWith('data:'));
+          if (url && url.startsWith('data:')) {
             const [meta, data] = url.split(',');
             const mediaType = meta.split(':')[1].split(';')[0];
+            console.log('[Streaming] Anthropic document block:', c.document.name, 'mediaType:', mediaType, 'data length:', data?.length);
             return {
               type: 'document' as const,
               source: {
@@ -332,12 +405,23 @@ async function streamAnthropic(
                 data: data,
               },
             };
+          } else {
+            console.error('[Streaming] Document URL is invalid or missing:', c.document.name, 'url:', url?.substring(0, 50));
           }
         }
-        return { type: 'text' as const, text: '' };
-      });
+        return null; // Return null for invalid/unhandled content
+      }).filter((c): c is NonNullable<typeof c> => c !== null && (c.type !== 'text' || (c as any).text !== ''));
       return { role: m.role, content };
     });
+
+  // Debug: Log the anthropic messages structure
+  console.log('[Streaming] Anthropic messages prepared, count:', anthropicMessages.length);
+  anthropicMessages.forEach((m, i) => {
+    if (Array.isArray(m.content)) {
+      const types = m.content.map((c: any) => c.type);
+      console.log(`[Streaming] Anthropic message ${i} (${m.role}) content types:`, types);
+    }
+  });
 
   const systemMessage = messages.find(m => m.role === 'system');
   const systemText = typeof systemMessage?.content === 'string' ? systemMessage.content : undefined;
@@ -377,12 +461,19 @@ async function streamAnthropic(
     ];
   }
 
+  // Check if any message has document content
+  const hasDocuments = anthropicMessages.some((m: any) =>
+    Array.isArray(m.content) && m.content.some((c: any) => c.type === 'document')
+  );
+
   const response = await streamingFetch(`${BASE_URL}/v1/messages`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'x-api-key': API_KEYS.anthropic,
       'anthropic-version': '2023-06-01',
+      // PDF support requires beta header
+      ...(hasDocuments && { 'anthropic-beta': 'pdfs-2024-09-25' }),
     },
     body: JSON.stringify(requestBody),
     signal: callbacks.signal,
@@ -446,6 +537,118 @@ async function streamAnthropic(
     console.error('[Streaming] Anthropic stream error:', error);
     throw error;
   }
+}
+
+// Helper to decode base64 text content for text files
+function decodeBase64Text(base64Url: string): string | null {
+  try {
+    // Extract base64 data
+    const [, data] = base64Url.split(',');
+    if (!data) return null;
+
+    // Decode base64 to text
+    const decoded = atob(data);
+    return decoded;
+  } catch (error) {
+    console.error('[StreamChat] Error decoding base64 text:', error);
+    return null;
+  }
+}
+
+// Convert messages with document types for OpenAI
+// OpenAI requires uploading files first via Files API, then referencing by file_id
+async function convertMessagesForOpenAI(messages: ChatMessage[]): Promise<ChatMessage[]> {
+  const convertedMessages: ChatMessage[] = [];
+
+  for (const msg of messages) {
+    if (typeof msg.content === 'string') {
+      convertedMessages.push(msg);
+      continue;
+    }
+
+    // Convert document content blocks for OpenAI format
+    const convertedContent: any[] = [];
+
+    for (const c of msg.content) {
+      if (c.type === 'document' && c.document) {
+        const mimeType = c.document.mimeType || 'application/octet-stream';
+        const textMimeTypes = ['text/plain', 'text/csv', 'application/json', 'text/markdown', 'text/html', 'text/xml'];
+
+        // For text files, decode and include as text content
+        if (textMimeTypes.includes(mimeType)) {
+          const textContent = decodeBase64Text(c.document.url);
+          if (textContent) {
+            console.log('[StreamChat] Decoded text file for OpenAI:', c.document.name, 'length:', textContent.length);
+            convertedContent.push({
+              type: 'text' as const,
+              text: `[Content of ${c.document.name || 'file'}]:\n${textContent}\n[End of file content]`
+            });
+            continue;
+          }
+        }
+
+        // For PDFs - upload to OpenAI Files API first, then reference by file_id
+        if (mimeType === 'application/pdf') {
+          // Extract base64 data from the URL for web uploads
+          let base64Data: string | undefined;
+          if (c.document.url && c.document.url.startsWith('data:')) {
+            const [, data] = c.document.url.split(',');
+            base64Data = data;
+          }
+
+          // Use fileUri if available, or base64 data for web
+          if (c.document.fileUri || base64Data) {
+            console.log('[StreamChat] PDF file for OpenAI - uploading first:', c.document.name);
+            const fileId = await uploadFileToOpenAI(
+              c.document.fileUri || c.document.url,
+              c.document.name || 'document.pdf',
+              mimeType,
+              base64Data
+            );
+
+            if (fileId) {
+              convertedContent.push({
+                type: 'file',
+                file: {
+                  file_id: fileId,
+                }
+              });
+              continue;
+            } else {
+              const isNative = Platform.OS !== 'web';
+              convertedContent.push({
+                type: 'text' as const,
+                text: isNative
+                  ? `[PDF file: ${c.document.name || 'document.pdf'} - PDF analysis with GPT is not supported on mobile. Please switch to a Claude model for PDF analysis.]`
+                  : `[PDF file: ${c.document.name || 'document.pdf'} - Upload failed. Please try again.]`
+              });
+              continue;
+            }
+          } else {
+            console.log('[StreamChat] PDF file missing fileUri and base64 data:', c.document.name);
+            convertedContent.push({
+              type: 'text' as const,
+              text: `[PDF file: ${c.document.name || 'document.pdf'} - Cannot upload, missing file reference. Please use Claude for PDF analysis.]`
+            });
+            continue;
+          }
+        }
+
+        // For other binary files, return a placeholder message
+        console.log('[StreamChat] Unsupported file type for OpenAI:', c.document.name, mimeType);
+        convertedContent.push({
+          type: 'text' as const,
+          text: `[File attached: ${c.document.name || 'unknown'} (${mimeType}). This file type is not supported for direct analysis with this model. Please use Claude for PDF analysis.]`
+        });
+      } else {
+        convertedContent.push(c);
+      }
+    }
+
+    convertedMessages.push({ ...msg, content: convertedContent });
+  }
+
+  return convertedMessages;
 }
 
 export async function streamChat(
@@ -528,9 +731,13 @@ export async function streamChat(
         }
       }
 
+      // Convert document content blocks to text for OpenAI (it doesn't support document type)
+      const convertedMessages = await convertMessagesForOpenAI(messagesWithMemory);
+      console.log('[StreamChat] Converted messages for OpenAI, count:', convertedMessages.length);
+
       const requestBody: Record<string, unknown> = {
         model: modelId,
-        messages: messagesWithMemory,
+        messages: convertedMessages,
         max_completion_tokens: 64000,
       };
 
@@ -541,10 +748,13 @@ export async function streamChat(
         callbacks
       );
     } else if (model.provider === 'xai') {
+      // Convert document content blocks to text for xAI (it doesn't support document type)
+      const convertedMessages = await convertMessagesForOpenAI(messagesWithMemory);
+
       await streamOpenAIStyle(
         `${BASE_URL}/v1/chat/completions`,
         { Authorization: `Bearer ${API_KEYS.xai}` },
-        { model: model.id, messages: messagesWithMemory, max_completion_tokens: 64000 },
+        { model: model.id, messages: convertedMessages, max_completion_tokens: 64000 },
         callbacks
       );
     }

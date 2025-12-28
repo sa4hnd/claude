@@ -23,7 +23,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as Haptics from 'expo-haptics';
 import { Audio } from 'expo-av';
 import { useMarkdown, type MarkedStyles, type useMarkdownHookOptions } from 'react-native-marked';
@@ -435,6 +435,16 @@ const MessageBubble = React.memo<MessageBubbleProps>(({ message, isLast, onRetry
           ))}
         </View>
       )}
+      {message.files && message.files.length > 0 && (
+        <View style={styles.messageFiles}>
+          {message.files.map((file) => (
+            <View key={file.id} style={styles.messageFileItem}>
+              <FileText size={16} color={colors.accent} />
+              <Text style={styles.messageFileName} numberOfLines={1}>{file.name}</Text>
+            </View>
+          ))}
+        </View>
+      )}
       <TouchableOpacity
         style={[styles.bubble, isUser ? styles.userBubble : styles.assistantBubble]}
         onLongPress={handleLongPress}
@@ -762,6 +772,15 @@ export default function ChatInput() {
     triggerHaptic('medium');
     const imagesToSend = attachedImages.length > 0 ? [...attachedImages] : undefined;
     const filesToSend = attachedFiles.length > 0 ? [...attachedFiles] : undefined;
+
+    // Debug: Log what we're sending
+    console.log('[ChatInput] handleSend - files to send:', filesToSend?.length || 0);
+    if (filesToSend) {
+      filesToSend.forEach((f, i) => {
+        console.log(`[ChatInput] File ${i}: name=${f.name}, mimeType=${f.mimeType}, hasBase64=${!!f.base64}, base64Length=${f.base64?.length || 0}`);
+      });
+    }
+
     setInputText('');
     setAttachedImages([]);
     setAttachedFiles([]);
@@ -871,35 +890,59 @@ export default function ChatInput() {
       console.log('[ChatInput] Document picker result:', result.canceled ? 'canceled' : 'selected');
 
       if (!result.canceled && result.assets) {
-        const newFiles: FileAttachment[] = await Promise.all(
-          result.assets.map(async (asset) => {
-            let base64: string | undefined;
+        const successfulFiles: FileAttachment[] = [];
+        const failedFiles: string[] = [];
 
-            // Read file as base64
-            if (asset.uri && FileSystem.documentDirectory) {
-              try {
-                const fileContent = await FileSystem.readAsStringAsync(asset.uri, {
-                  encoding: FileSystem.EncodingType.Base64,
-                });
+        for (const asset of result.assets) {
+          let base64: string | undefined;
+
+          // Read file as base64
+          if (asset.uri) {
+            try {
+              console.log('[ChatInput] Reading file:', asset.name, 'from:', asset.uri);
+              const fileContent = await FileSystem.readAsStringAsync(asset.uri, {
+                encoding: 'base64',
+              });
+
+              if (fileContent && fileContent.length > 0) {
                 base64 = `data:${asset.mimeType || 'application/pdf'};base64,${fileContent}`;
-                console.log('[ChatInput] File loaded, size:', asset.size, 'bytes');
-              } catch (err) {
-                console.error('[ChatInput] Error reading file:', err);
+                console.log('[ChatInput] File loaded successfully:', asset.name, 'base64 length:', base64.length);
+
+                successfulFiles.push({
+                  id: Date.now().toString(36) + Math.random().toString(36).substr(2, 9),
+                  uri: asset.uri,
+                  name: asset.name,
+                  mimeType: asset.mimeType || 'application/octet-stream',
+                  size: asset.size || 0,
+                  base64,
+                });
+              } else {
+                console.error('[ChatInput] File content is empty:', asset.name);
+                failedFiles.push(asset.name);
               }
+            } catch (err) {
+              console.error('[ChatInput] Error reading file:', asset.name, err);
+              failedFiles.push(asset.name);
             }
+          } else {
+            console.log('[ChatInput] No URI for file:', asset.name);
+            failedFiles.push(asset.name);
+          }
+        }
 
-            return {
-              id: Date.now().toString(36) + Math.random().toString(36).substr(2, 9),
-              uri: asset.uri,
-              name: asset.name,
-              mimeType: asset.mimeType || 'application/octet-stream',
-              size: asset.size || 0,
-              base64,
-            };
-          })
-        );
+        // Add successful files
+        if (successfulFiles.length > 0) {
+          console.log('[ChatInput] Adding', successfulFiles.length, 'successful files');
+          setAttachedFiles((prev) => [...prev, ...successfulFiles]);
+        }
 
-        setAttachedFiles((prev) => [...prev, ...newFiles]);
+        // Alert user about failed files
+        if (failedFiles.length > 0) {
+          Alert.alert(
+            'File Read Error',
+            `Could not read the following file(s): ${failedFiles.join(', ')}. Please try again.`
+          );
+        }
       }
     } catch (error) {
       console.error('[ChatInput] Error picking file:', error);
@@ -1324,6 +1367,26 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.sm,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.1)',
+  },
+  messageFiles: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginBottom: spacing.sm,
+    gap: spacing.xs,
+  },
+  messageFileItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    gap: spacing.xs,
+  },
+  messageFileName: {
+    fontSize: 13,
+    color: colors.text,
+    maxWidth: 150,
   },
   emptyState: {
     flex: 1,

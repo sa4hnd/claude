@@ -518,16 +518,21 @@ export const [ChatProvider, useChat] = createContextHook(() => {
           });
         }
         if (hasFiles && msg.files) {
+          console.log('[ChatProvider] Processing', msg.files.length, 'files for message');
           msg.files.forEach(file => {
             if (file.base64) {
+              console.log('[ChatProvider] Adding file to message:', file.name, 'mimeType:', file.mimeType, 'base64 length:', file.base64.length, 'uri:', file.uri);
               contentArray.push({
                 type: 'document',
                 document: {
                   url: file.base64,
                   name: file.name,
-                  mimeType: file.mimeType
+                  mimeType: file.mimeType,
+                  fileUri: file.uri  // Pass original file URI for OpenAI file upload
                 }
               });
+            } else {
+              console.log('[ChatProvider] File has no base64 data:', file.name);
             }
           });
         }

@@ -373,6 +373,36 @@ const MessageBubble = React.memo<MessageBubbleProps>(({ message, isLast, onRetry
     onRetry?.(message.id);
   }, [message.id, onRetry]);
 
+  const handleLongPress = useCallback(() => {
+    triggerHaptic('medium');
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: ['Cancel', 'Copy Message', 'Retry'],
+          cancelButtonIndex: 0,
+        },
+        (buttonIndex) => {
+          if (buttonIndex === 1) {
+            handleCopy();
+          } else if (buttonIndex === 2 && !isUser) {
+            handleRetry();
+          }
+        }
+      );
+    } else {
+      // Android: show Alert as action sheet alternative
+      Alert.alert(
+        'Message Actions',
+        undefined,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Copy Message', onPress: handleCopy },
+          ...(!isUser ? [{ text: 'Retry', onPress: handleRetry }] : []),
+        ]
+      );
+    }
+  }, [handleCopy, handleRetry, isUser]);
+
   const isStreaming = message.isStreaming && isLast;
 
   // Check if content has complex markdown
@@ -387,7 +417,12 @@ const MessageBubble = React.memo<MessageBubbleProps>(({ message, isLast, onRetry
           ))}
         </View>
       )}
-      <View style={[styles.bubble, isUser ? styles.userBubble : styles.assistantBubble]}>
+      <TouchableOpacity
+        style={[styles.bubble, isUser ? styles.userBubble : styles.assistantBubble]}
+        onLongPress={handleLongPress}
+        activeOpacity={0.8}
+        delayLongPress={300}
+      >
         {!isUser && message.thinking && (
           <CollapsibleThinking thinking={message.thinking} isStreaming={isStreaming && !content} />
         )}
@@ -416,7 +451,7 @@ const MessageBubble = React.memo<MessageBubbleProps>(({ message, isLast, onRetry
         ) : isStreaming ? (
           <SpinningClaudeLogo size={24} />
         ) : null}
-      </View>
+      </TouchableOpacity>
       {/* Action buttons for non-streaming messages */}
       {!isStreaming && content && !isUser && (
         <View style={styles.messageActions}>

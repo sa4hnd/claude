@@ -4,6 +4,7 @@ import * as Haptics from 'expo-haptics';
 import createContextHook from '@nkzw/create-context-hook';
 import { Conversation, Message, ImageAttachment } from '@/lib/types/chat';
 import { Model, AVAILABLE_MODELS, streamChat, ChatMessage, MessageContent } from '@/lib/ai/streaming-service';
+import { addMemory, type MemoryMessage } from '@/lib/ai/memory-service';
 import { storage } from '@/lib/storage';
 import { useAuth } from './AuthProvider';
 import { supabase } from '@/lib/supabase';
@@ -548,6 +549,9 @@ export const [ChatProvider, useChat] = createContextHook(() => {
     };
 
     try {
+      // Get the memory user ID (use authenticated user email or a local ID)
+      const memoryUserId = user?.email || 'local_user';
+
       await streamChat(chatMessages, selectedModel, {
         onToken: (token) => {
           fullResponse += token;
@@ -599,6 +603,21 @@ export const [ChatProvider, useChat] = createContextHook(() => {
             } catch (error) {
               console.error('[ChatProvider] Failed to update message in Supabase:', error);
             }
+          }
+
+          // Save conversation to Mem0 memory
+          try {
+            const memoryMessages: MemoryMessage[] = [
+              { role: 'user', content },
+              { role: 'assistant', content: text },
+            ];
+            await addMemory(memoryMessages, memoryUserId, {
+              conversationId,
+              model: selectedModel.name,
+            });
+            console.log('[ChatProvider] Memory saved successfully');
+          } catch (memError) {
+            console.error('[ChatProvider] Failed to save memory:', memError);
           }
 
           pendingMessageIdsRef.current.delete(userMessage.id);
@@ -667,7 +686,7 @@ export const [ChatProvider, useChat] = createContextHook(() => {
           streamingConversationIdRef.current = null;
         },
         signal: abortController.signal,
-      });
+      }, memoryUserId);
     } catch (error) {
       console.error('[ChatProvider] Send message error:', error);
     } finally {
@@ -676,7 +695,7 @@ export const [ChatProvider, useChat] = createContextHook(() => {
       setStreamingThinking('');
       abortControllerRef.current = null;
     }
-  }, [activeConversationId, conversations, selectedModel, createConversation, triggerStreamingHaptic, isAuthenticated, user?.id]);
+  }, [activeConversationId, conversations, selectedModel, createConversation, triggerStreamingHaptic, isAuthenticated, user?.id, user?.email]);
 
   const stopStreaming = useCallback(async () => {
     if (batchTimeoutRef.current) {

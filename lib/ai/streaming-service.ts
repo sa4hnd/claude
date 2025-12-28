@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
 import { fetch as expoFetch } from 'expo/fetch';
+import { searchMemory, addMemory, formatMemoriesForContext, type MemoryMessage } from './memory-service';
 
 const BASE_URL = 'https://epidermoid-stefani-legatine.ngrok-free.dev';
 
@@ -419,27 +420,92 @@ async function streamAnthropic(
 export async function streamChat(
   messages: ChatMessage[],
   model: Model,
-  callbacks: StreamCallbacks
+  callbacks: StreamCallbacks,
+  userId?: string
 ): Promise<void> {
   console.log('[StreamChat] Starting chat with model:', model.name);
 
+  let messagesWithMemory = messages;
+
+  // If userId is provided, search for relevant memories and add to context
+  if (userId) {
+    try {
+      // Get the last user message for memory search
+      const lastUserMessage = [...messages].reverse().find(m => m.role === 'user');
+      const userQuery = typeof lastUserMessage?.content === 'string'
+        ? lastUserMessage.content
+        : lastUserMessage?.content?.find(c => c.type === 'text')?.text || '';
+
+      if (userQuery) {
+        console.log('[StreamChat] Searching memories for user:', userId);
+        const memories = await searchMemory(userQuery, userId, 5);
+
+        if (memories.length > 0) {
+          const memoryContext = formatMemoriesForContext(memories);
+          console.log('[StreamChat] Found', memories.length, 'relevant memories');
+
+          // Add memory context to system message
+          const systemMessageIndex = messages.findIndex(m => m.role === 'system');
+          if (systemMessageIndex !== -1) {
+            const existingSystem = messages[systemMessageIndex];
+            const existingContent = typeof existingSystem.content === 'string'
+              ? existingSystem.content
+              : existingSystem.content?.find(c => c.type === 'text')?.text || '';
+            messagesWithMemory = [...messages];
+            messagesWithMemory[systemMessageIndex] = {
+              ...existingSystem,
+              content: existingContent + memoryContext,
+            };
+          } else {
+            // Add new system message with memory context
+            messagesWithMemory = [
+              { role: 'system', content: `You are a helpful AI assistant.${memoryContext}` },
+              ...messages,
+            ];
+          }
+        }
+      }
+    } catch (error) {
+      console.error('[StreamChat] Memory search error:', error);
+      // Continue without memory if there's an error
+    }
+  }
+
   try {
     if (model.provider === 'anthropic') {
-      await streamAnthropic(messages, model.id, callbacks);
+      await streamAnthropic(messagesWithMemory, model.id, callbacks);
     } else if (model.provider === 'openai') {
       await streamOpenAIStyle(
         `${BASE_URL}/v1/chat/completions`,
         { Authorization: `Bearer ${API_KEYS.openai}` },
-        { model: model.id, messages, max_completion_tokens: 64000 },
+        { model: model.id, messages: messagesWithMemory, max_completion_tokens: 64000 },
         callbacks
       );
     } else if (model.provider === 'xai') {
       await streamOpenAIStyle(
         `${BASE_URL}/v1/chat/completions`,
         { Authorization: `Bearer ${API_KEYS.xai}` },
-        { model: model.id, messages, max_completion_tokens: 64000 },
+        { model: model.id, messages: messagesWithMemory, max_completion_tokens: 64000 },
         callbacks
       );
+    }
+
+    // After successful completion, save the conversation to memory
+    if (userId) {
+      try {
+        // Get the last exchange (user message + assistant response)
+        const lastUserMsg = [...messages].reverse().find(m => m.role === 'user');
+        if (lastUserMsg) {
+          const userContent = typeof lastUserMsg.content === 'string'
+            ? lastUserMsg.content
+            : lastUserMsg.content?.find(c => c.type === 'text')?.text || '';
+
+          // Note: We'll add memory in ChatProvider after we get the full response
+          console.log('[StreamChat] Conversation will be saved to memory by ChatProvider');
+        }
+      } catch (memError) {
+        console.error('[StreamChat] Error preparing memory save:', memError);
+      }
     }
   } catch (error) {
     console.error('[StreamChat] Error:', error);

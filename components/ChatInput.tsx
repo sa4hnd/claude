@@ -725,11 +725,13 @@ export default function ChatInput() {
   const prevMessagesLengthRef = useRef(messages.length);
   useEffect(() => {
     if (messages.length > prevMessagesLengthRef.current) {
-      // New message added - scroll to bottom
+      setUserScrolled(false);
       setTimeout(() => {
         flatListRef.current?.scrollToEnd({ animated: true });
-        setUserScrolled(false);
-      }, 100);
+      }, 50);
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: false });
+      }, 200);
     }
     prevMessagesLengthRef.current = messages.length;
   }, [messages.length]);
@@ -1118,11 +1120,12 @@ export default function ChatInput() {
           onScroll={handleScroll}
           scrollEventThrottle={16}
           onContentSizeChange={() => {
-            if (!userScrolled) scrollToBottom();
+            if (!userScrolled) {
+              setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 10);
+            }
           }}
-          maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
           keyboardShouldPersistTaps="handled"
-          onScrollBeginDrag={Keyboard.dismiss}
+          keyboardDismissMode="on-drag"
         />
       )}
 

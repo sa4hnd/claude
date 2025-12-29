@@ -134,15 +134,17 @@ export const [ChatProvider, useChat] = createContextHook(() => {
       .on(
         'postgres_changes',
         {
-          event: '*',
+          event: 'DELETE',
           schema: 'public',
           table: 'conversations',
           filter: `user_id=eq.${user.id}`,
         },
         (payload) => {
-          console.log('[ChatProvider] Conversation change:', payload.eventType);
-          // Reload conversations on changes
-          loadSupabaseConversations();
+          console.log('[ChatProvider] Conversation deleted:', payload.old);
+          const deletedId = (payload.old as any)?.id;
+          if (deletedId) {
+            setConversations(prev => prev.filter(c => c.id !== deletedId));
+          }
         }
       )
       .on(

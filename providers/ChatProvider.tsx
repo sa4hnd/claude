@@ -65,6 +65,18 @@ export const [ChatProvider, useChat] = createContextHook(() => {
   const streamingConversationIdRef = useRef<string | null>(null);
   const realtimeChannelRef = useRef<RealtimeChannel | null>(null);
   const pendingMessageIdsRef = useRef<Set<string>>(new Set());
+  const hasLoadedRef = useRef(false);
+  const isStreamingRef = useRef(false);
+  const userIdRef = useRef<string | null>(null);
+
+  // Keep refs in sync with state
+  useEffect(() => {
+    isStreamingRef.current = isStreaming;
+  }, [isStreaming]);
+
+  useEffect(() => {
+    userIdRef.current = user?.id || null;
+  }, [user?.id]);
 
   const triggerStreamingHaptic = useCallback(() => {
     if (Platform.OS === 'web') return;
@@ -75,16 +87,29 @@ export const [ChatProvider, useChat] = createContextHook(() => {
     }
   }, []);
 
-  // Load conversations from Supabase
+  // Load conversations from Supabase - stable function that uses refs
   const loadSupabaseConversations = useCallback(async () => {
-    if (!user?.id) return;
+    const userId = userIdRef.current;
+    if (!userId) return;
+
+    // CRITICAL: Skip if streaming to prevent chat from disappearing
+    if (isStreamingRef.current || streamingMessageIdRef.current) {
+      console.log('[ChatProvider] Skipping reload - currently streaming');
+      return;
+    }
+
+    // Skip if already loaded
+    if (hasLoadedRef.current) {
+      console.log('[ChatProvider] Skipping reload - already loaded');
+      return;
+    }
 
     try {
       console.log('[ChatProvider] Loading conversations from Supabase...');
       const { data: convData, error: convError } = await supabase
         .from('conversations')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .order('updated_at', { ascending: false });
 
       if (convError) {
@@ -92,15 +117,28 @@ export const [ChatProvider, useChat] = createContextHook(() => {
         return;
       }
 
+      // Check again after async operation
+      if (isStreamingRef.current || streamingMessageIdRef.current) {
+        console.log('[ChatProvider] Aborting reload - streaming started during load');
+        return;
+      }
+
       if (!convData || convData.length === 0) {
         setConversations([]);
         setIsLoading(false);
+        hasLoadedRef.current = true;
         return;
       }
 
       // Load messages for each conversation
       const conversationsWithMessages: Conversation[] = [];
       for (const conv of convData) {
+        // Check streaming status periodically during long load
+        if (isStreamingRef.current || streamingMessageIdRef.current) {
+          console.log('[ChatProvider] Aborting reload - streaming started during messages load');
+          return;
+        }
+
         const { data: msgData, error: msgError } = await supabase
           .from('messages')
           .select('*')
@@ -115,14 +153,21 @@ export const [ChatProvider, useChat] = createContextHook(() => {
         conversationsWithMessages.push(supabaseToConversation(conv, msgData || []));
       }
 
+      // Final check before setting state
+      if (isStreamingRef.current || streamingMessageIdRef.current) {
+        console.log('[ChatProvider] Aborting reload - streaming started before setConversations');
+        return;
+      }
+
       setConversations(conversationsWithMessages);
+      hasLoadedRef.current = true;
       console.log('[ChatProvider] Loaded', conversationsWithMessages.length, 'conversations from Supabase');
     } catch (error) {
       console.error('[ChatProvider] Failed to load Supabase conversations:', error);
     } finally {
       setIsLoading(false);
     }
-  }, [user?.id]);
+  }, []); // No dependencies - uses refs
 
   // Set up realtime subscription
   useEffect(() => {
@@ -198,16 +243,21 @@ export const [ChatProvider, useChat] = createContextHook(() => {
         realtimeChannelRef.current = null;
       }
     };
-  }, [isAuthenticated, user?.id, loadSupabaseConversations]);
+  }, [isAuthenticated, user?.id]);
 
-  // Load data based on authentication state
+  // Load data based on authentication state - only runs once per auth change
   useEffect(() => {
     if (isAuthenticated && user?.id) {
+      // Reset hasLoaded when user changes
+      if (userIdRef.current !== user.id) {
+        hasLoadedRef.current = false;
+      }
       loadSupabaseConversations();
     } else if (!isAuthenticated) {
+      hasLoadedRef.current = false;
       loadLocalData();
     }
-  }, [isAuthenticated, user?.id, loadSupabaseConversations]);
+  }, [isAuthenticated, user?.id]); // Removed loadSupabaseConversations from deps
 
   // Save to local storage when not authenticated
   useEffect(() => {

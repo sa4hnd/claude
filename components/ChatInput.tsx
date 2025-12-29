@@ -789,12 +789,20 @@ export default function ChatInput() {
     setUserScrolled(false);
     Keyboard.dismiss();
 
+    // Pre-scroll before message is sent
+    setTimeout(() => {
+      flatListRef.current?.scrollToEnd({ animated: false });
+    }, 50);
+
     await sendMessage(trimmedText, imagesToSend, filesToSend);
 
-    // Force scroll to bottom after sending message
+    // Force scroll to bottom after sending message (multiple times to ensure it works)
     setTimeout(() => {
       flatListRef.current?.scrollToEnd({ animated: true });
-    }, 150);
+    }, 100);
+    setTimeout(() => {
+      flatListRef.current?.scrollToEnd({ animated: false });
+    }, 300);
   }, [inputText, attachedImages, attachedFiles, isStreaming, sendMessage]);
 
   const pickImage = useCallback(async (useCamera: boolean) => {
